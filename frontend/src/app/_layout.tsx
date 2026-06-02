@@ -1,4 +1,5 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+// 1行目のインポート先を @react-navigation/native に変更しました
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
