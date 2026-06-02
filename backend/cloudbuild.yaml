@@ -1,0 +1,10 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/$PROJECT_ID/matsunya-backend:$SHORT_SHA', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/$PROJECT_ID/matsunya-backend:$SHORT_SHA']
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args: ['run', 'deploy', 'matsunya-backend', '--image', 'gcr.io/$PROJECT_ID/matsunya-backend:$SHORT_SHA', '--region', 'us-central1', '--platform', 'managed']
+images:
+- 'gcr.io/$PROJECT_ID/matsunya-backend:$SHORT_SHA'

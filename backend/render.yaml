@@ -1,0 +1,10 @@
+# Minimal Render spec (service)
+services:
+  - type: web
+    name: matsunya-backend
+    env: docker
+    plan: starter
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: DATABASE_URL
+      - key: GOOGLE_MAPS_API_KEY
