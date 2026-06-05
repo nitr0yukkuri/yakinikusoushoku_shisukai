@@ -140,7 +140,7 @@ go run main.go
 ### 4. フロントエンドの起動
 
 ```bash
-cd frontend
+cd mobile
 npm install
 npx expo start
 ```
