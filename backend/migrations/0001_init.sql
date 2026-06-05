@@ -89,3 +89,23 @@ COMMENT ON COLUMN request.updated_at IS '更新日時';
 CREATE INDEX IF NOT EXISTS idx_request_req_user ON request (req_user);
 CREATE INDEX IF NOT EXISTS idx_request_req_target ON request (req_target);
 CREATE INDEX IF NOT EXISTS idx_request_status ON request (status);
+
+CREATE TABLE IF NOT EXISTS auth_users (
+    id BIGSERIAL PRIMARY KEY,
+    google_sub TEXT NOT NULL UNIQUE,
+    email TEXT,
+    name TEXT,
+    picture_url TEXT,
+    email_verified BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+COMMENT ON TABLE auth_users IS 'Googleログイン済みユーザー';
+COMMENT ON COLUMN auth_users.google_sub IS 'Google ID tokenのsub。一意で変更されないGoogleユーザーID';
+COMMENT ON COLUMN auth_users.email IS 'Googleアカウントのメールアドレス';
+COMMENT ON COLUMN auth_users.name IS 'Googleアカウント表示名';
+COMMENT ON COLUMN auth_users.picture_url IS 'Googleプロフィール画像URL';
+COMMENT ON COLUMN auth_users.email_verified IS 'Googleでメール確認済みか';
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users (email);
