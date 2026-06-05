@@ -2,7 +2,13 @@ import React from 'react';
 import { StyleSheet, View, Image, TouchableOpacity, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+//プレビュー用ボタンのための処理
+import { useRouter } from 'expo-router';
+
 export default function LoginScreen() {
+
+  //プレビュー用ボタンのための処理
+  const router = useRouter();
   
   // Googleログインボタンが押された時の処理
   const handleGoogleLogin = () => {
@@ -48,6 +54,18 @@ export default function LoginScreen() {
             resizeMode="contain"
           />
         </TouchableOpacity>
+
+        {/* ▼▼▼ ここからプレビュー用ボタン ▼▼▼ */}
+        <TouchableOpacity 
+          onPress={() => router.push('/signup')} 
+          style={{ marginTop: 30, padding: 10 }}
+        >
+          <Text style={{ color: '#004499', fontWeight: 'bold' }}>
+            【開発用】新規登録画面を確認する →
+          </Text>
+        </TouchableOpacity>
+        {/* ▲▲▲ プレビュー用ボタンここまで ▲▲▲ */}
+
       </View>
     </SafeAreaView>
   );
