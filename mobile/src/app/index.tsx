@@ -134,7 +134,10 @@ export default function LoginScreen() {
         </TouchableOpacity>
 
         {/* ▼▼▼ ここからプレビュー用ボタン ▼▼▼ */}
-        <TouchableOpacity onPress={() => router.push('/signup')} style={{ marginTop: 30, padding: 10 }}>
+        <TouchableOpacity 
+          onPress={() => router.push('/signup')} 
+          style={{ marginTop: 30, padding: 10 }}
+        >
           <Text style={{ color: '#004499', fontWeight: 'bold' }}>
             【開発用】新規登録画面を確認する →
           </Text>
