@@ -45,7 +45,7 @@
 - アプリで遅刻者に罰を与えない（責めるとかえって遅刻が増えてしまう）
 - 位置情報を共有するだけでなく、情報を活用する
   - → 到着時間の予測、近くのスポット提案
-- 前日に、位置情報をONにするよう通知してくれる（位置情報の設定し忘れの防止）
+- 前日に、位置情報をONにするよう通知してくれる（位置情報の設定し忘れ防止）
 
 ---
 
@@ -68,6 +68,100 @@
 
 ### デプロイ
 - **Render** または **Google Cloud Run** — バックエンドのホスティング
+
+---
+
+## 主要機能
+
+### 待ち合わせ管理
+- 待ち合わせの作成・参加（ルームコードやリンクで招待）
+- 待ち合わせ時間・場所の設定
+
+### リアルタイム位置情報共有
+- 遅刻者の現在地をマップ上にリアルタイム表示
+- 待っている側の位置情報も共有し、双方の合流をサポート
+- WebSocketによる低遅延の位置情報更新
+
+### 到着予定時間の表示
+- Google Maps APIを用いたルート計算・ETA推定
+- 余裕を持たせたバッファ付きで表示し、超過を防止
+
+### 暇つぶしスポット提案
+- 待機中のユーザーの現在地周辺のカフェ・施設などを提案
+- Google Maps Places APIを活用
+
+### 通知
+- 前日に位置情報をONにするよう通知（設定し忘れ防止）
+- 相手が出発したとき・近づいたときの通知
+
+---
+
+## セットアップ手順
+
+### 必要環境
+
+- Go 1.22+
+- Node.js 20+
+- React Native 開発環境（Expo または React Native CLI）
+- PostgreSQL（ローカル） または Neon アカウント
+
+### 1. リポジトリのクローン
+
+```bash
+git clone https://github.com/nitr0yukkuri/yakinikusoushoku_shisukai.git
+cd yakinikusoushoku_shisukai
+```
+
+### 2. 環境変数の設定
+
+ルートに `.env` を1つ置いて全変数をまとめて管理する。
+
+```bash
+cp .env.example .env
+```
+
+`.env` の内容を後述の「環境変数一覧」を参考に埋める。
+
+> **注意:** `.env` は `.gitignore` に含まれているため、各自でローカルに作成すること。
+
+### 3. バックエンドの起動
+
+```bash
+cd backend
+go mod tidy
+
+# DBマイグレーション
+psql $DATABASE_URL -f migrations/0001_init.sql
+
+# サーバー起動
+go run main.go
+```
+
+### 4. フロントエンドの起動
+
+```bash
+cd frontend
+npm install
+npx expo start
+```
+
+---
+
+## 環境変数一覧
+
+すべての環境変数はルートの `.env` に記載する。  
+バックエンド（Go）は `godotenv` で `../.env` を読み込み、フロントエンド（Expo）は起動時に自動で参照する。
+
+| 変数名 | 使用箇所 | 説明 |
+|---|---|---|
+| `DATABASE_URL` | backend | NeonまたはローカルPostgreSQLの接続文字列 |
+| `GOOGLE_MAPS_API_KEY` | backend | Google Maps / Places API キー（サーバー側） |
+| `JWT_SECRET` | backend | 認証トークン署名用シークレット |
+| `PORT` | backend | サーバーのリッスンポート（デフォルト: `8080`） |
+| `ENV` | backend | 実行環境（`development` / `production`） |
+| `EXPO_PUBLIC_API_URL` | frontend | バックエンドAPIのベースURL |
+| `EXPO_PUBLIC_WS_URL` | frontend | WebSocketサーバーのURL |
+| `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | frontend | Google OAuth クライアントID |
 
 ---
 
