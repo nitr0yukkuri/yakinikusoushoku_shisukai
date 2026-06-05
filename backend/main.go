@@ -10,11 +10,14 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 )
 
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 func main() {
+	_ = godotenv.Load("../.env")
+
 	ctx := context.Background()
 	dburl := os.Getenv("DATABASE_URL")
 	if dburl == "" {
