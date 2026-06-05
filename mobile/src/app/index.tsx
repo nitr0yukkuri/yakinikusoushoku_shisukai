@@ -61,11 +61,12 @@ export default function LoginScreen() {
       })
       .then((body) => {
         console.log('Google Login Success:', body.user.email);
+        router.push('/signup');
       })
       .catch((error: Error) => {
         console.error('Google Login Failed:', error.message);
       });
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     console.log('Google redirect URI:', redirectUri);
