@@ -1,17 +1,20 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useColorScheme } from 'react-native';
-// ▼▼▼ 追加: expo-router から Stack をインポート ▼▼▼
-import { Stack } from 'expo-router'; 
+import { Slot } from 'expo-router'; // ★追加：Expo Routerの画面枠
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
-// import AppTabs from '@/components/app-tabs'; // 一旦これはコメントアウト
+// import AppTabs from '@/components/app-tabs'; // ★一旦コメントアウトか削除
 
-export default function RootLayout() {
+export default function TabLayout() {
   const colorScheme = useColorScheme();
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       
+      {/* ★AppTabs の代わりに Slot を配置する */}
+      {/* これにより index.tsx や home.tsx がここに表示されるようになります */}
+      <Slot /> 
+
       {/* ▼▼▼ ここが重要！固定コンポーネントではなく、画面遷移の「枠」を置く ▼▼▼ */}
       <Stack screenOptions={{ headerShown: false }}>
         {/* 必要であれば、ここに各画面の細かい設定を書けます */}
