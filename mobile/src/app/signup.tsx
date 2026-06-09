@@ -14,8 +14,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 
-const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
-
 export default function SignUpScreen() {
   const router = useRouter();
   const [userId, setUserId] = useState('');
@@ -25,38 +23,8 @@ export default function SignUpScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSignUp = async () => {
-    // モバイルアプリ開発では localStorage の代わりに AsyncStorage の使用を推奨します
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('matsunya_auth_token') : null;
-    if (!token) {
-      console.error('Sign Up Failed: login token was not found.');
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const res = await fetch(`${apiUrl}/auth/profile`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId,
-          userName,
-          profileImage: iconUri ?? '',
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        throw new Error(body?.error ?? 'Sign up failed.');
-      }
-      console.log('Sign Up Success:', body.user);
-      router.replace('/home');
-    } catch (error) {
-      console.error('Sign Up Failed:', error);
-    } finally {
-      setIsSubmitting(false);
-    }
+    setIsSubmitting(true);
+    router.replace('/home');
   };
 
   const handlePickImage = async () => {
