@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ImageBackground, TouchableOpacity, SafeAreaView, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Footer } from '../components/Footer';
+import { Popup } from '../components/Popup';
 
 export default function HomeScreen() {
+  // ポップアップの表示・非表示を管理する状態
+  const [isPopupVisible, setPopupVisible] = useState(false);
+
   return (
     <View style={styles.container}>
       {/* 背景の地図画像（仮） */}
@@ -17,23 +21,31 @@ export default function HomeScreen() {
           {/* ヘッダー領域 */}
           <View style={styles.header}>
             {/* 左上：ロゴ */}
-              <Image
-                source={require('../../assets/images/Matsunya_logo.png')}
-                style={styles.logoImage}
-                resizeMode="contain" // 画像の縦横比を崩さずに枠内に収める設定
-              />
+            <Image
+              source={require('../../assets/images/Matsunya_logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             
-            {/* 本来ここアイコンの画像*/}
+            {/* 右上：アイコンボタン（挙動を元に戻しました） */}
             <TouchableOpacity style={styles.iconContainer}>
               <Ionicons name="person" size={26} color="#2330df" />
             </TouchableOpacity>
           </View>
 
-          {/* メインコンテンツエリア（将来地図のピンなどが表示される場所） */}
+          {/* メインコンテンツエリア */}
           <View style={styles.mainContent} />
 
-          {/* 修正した緑色の5ボタンフッター */}
-          <Footer />
+          {/* 修正：フッターにポップアップを開く関数を渡す */}
+          <Footer onPressNotification={() => setPopupVisible(true)} />
+
+          {/* ポップアップコンポーネント */}
+          <Popup
+            visible={isPopupVisible}
+            onClose={() => setPopupVisible(false)}
+            title="通知"
+            message="新着の通知はありません。"
+          />
 
         </SafeAreaView>
       </ImageBackground>
@@ -61,12 +73,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
   },
-
-logoImage: {
-    width: 220,  // ロゴ画像の横幅
-    height: 60, // ロゴ画像の縦幅
+  logoImage: {
+    width: 220,
+    height: 60,
   },
-
   iconContainer: {
     backgroundColor: '#ffffff',
     padding: 12, 
