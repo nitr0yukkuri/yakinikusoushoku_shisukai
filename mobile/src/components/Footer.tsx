@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 interface FooterProps {
   onPressNotification?: () => void;
 }
-export const Footer = () => {
+export const Footer: React.FC<FooterProps> = ({ onPressNotification }) => {
   return (
     <View style={styles.footerContainer}>
       {/* 1. フレンド */}
