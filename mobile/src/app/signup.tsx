@@ -25,7 +25,8 @@ export default function SignUpScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSignUp = async () => {
-    const token = localStorage.getItem('matsunya_auth_token');
+    // モバイルアプリ開発では localStorage の代わりに AsyncStorage の使用を推奨します
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('matsunya_auth_token') : null;
     if (!token) {
       console.error('Sign Up Failed: login token was not found.');
       return;
@@ -57,6 +58,7 @@ export default function SignUpScreen() {
       setIsSubmitting(false);
     }
   };
+
   const handlePickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -77,12 +79,7 @@ export default function SignUpScreen() {
   const handleUserIdChange = (text: string) => {
     setUserId(text);
     const isValid = /^[a-zA-Z0-9]*$/.test(text);
-    
-    if (!isValid && text.length > 0) {
-      setUserIdError('半角英数字のみで入力してください');
-    } else {
-      setUserIdError('');
-    }
+    setUserIdError(!isValid && text.length > 0 ? '半角英数字のみで入力してください' : '');
   };
 
   return (
@@ -94,24 +91,11 @@ export default function SignUpScreen() {
         <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
           
           <View style={styles.logoContainer}>
-            {/* ▼▼▼ 画像が完成したらここから削除 ▼▼▼ */}
-            <View style={styles.logoMock}>
-              <View style={styles.iconCircle}>
-                <View style={[styles.eye, { left: 4, top: 6, backgroundColor: '#FFF500' }]} />
-                <View style={[styles.eye, { right: 4, bottom: 6, backgroundColor: '#0044FF' }]} />
-              </View>
-              <Text style={styles.logoText}>待つん屋</Text>
-            </View>
-            {/* ▲▲▲ 画像が完成したらここまで削除 ▲▲▲ */}
-
-            {/* ▼▼▼ 画像が完成したら下の行のコメント化を外してください ▼▼▼ */}
-            {/*
             <Image 
-              source={require('../../assets/images/logo.png')} 
+              source={require('../../assets/images/matsunya-logo.png')} 
               style={styles.logoImage}
               resizeMode="contain"
             /> 
-            */}
           </View>
 
           <View style={styles.iconSection}>
@@ -172,149 +156,35 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  // ==========================================
-  // 共通・本番用のスタイル（残す部分）
-  // ==========================================
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#E2FBE2',
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 40,
-    paddingBottom: 40,
-  },
-  logoContainer: {
-    marginBottom: 40,
-  },
-  // 本番用：画像を貼る時のスタイル設定
-  logoImage: {
-    width: 200, 
-    height: 60,
-  },
-  iconSection: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
+  safeArea: { flex: 1, backgroundColor: '#E2FBE2' },
+  keyboardView: { flex: 1 },
+  scrollContainer: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 40, paddingBottom: 40 },
+  logoContainer: { marginBottom: 40 },
+  logoImage: { width: 300, height: 90 },
+  iconSection: { alignItems: 'center', marginBottom: 40 },
   iconPreview: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: '#004499',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-    overflow: 'hidden',
+    width: 100, height: 100, borderRadius: 50, backgroundColor: '#FFFFFF',
+    borderWidth: 2, borderColor: '#004499', borderStyle: 'dashed',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 10, overflow: 'hidden',
   },
-  hasImageIcon: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 50,
-  },
-  iconAddText: {
-    fontSize: 40,
-    color: '#004499',
-    fontWeight: '300',
-  },
-  iconLabel: {
-    fontSize: 14,
-    color: '#333333',
-    fontWeight: '500',
-  },
-  formSection: {
-    width: '85%',
-    maxWidth: 340,
-    marginBottom: 40,
-  },
-  inputContainer: {
-    marginBottom: 20,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1F1F1F',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
+  hasImageIcon: { width: '100%', height: '100%', borderRadius: 50 },
+  iconAddText: { fontSize: 40, color: '#004499', fontWeight: '300' },
+  iconLabel: { fontSize: 14, color: '#333333', fontWeight: '500' },
+  formSection: { width: '85%', maxWidth: 340, marginBottom: 40 },
+  inputContainer: { marginBottom: 20 },
+  inputLabel: { fontSize: 14, fontWeight: '600', color: '#1F1F1F', marginBottom: 8, marginLeft: 4 },
   input: {
-    backgroundColor: '#FFFFFF',
-    height: 52,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#E1E4E8',
-    color: '#333333',
+    backgroundColor: '#FFFFFF', height: 52, borderRadius: 8, paddingHorizontal: 16,
+    fontSize: 16, borderWidth: 1, borderColor: '#E1E4E8', color: '#333333',
   },
-  inputError: {
-    borderColor: '#FF0000',
-    borderWidth: 1.5,
-  },
-  errorText: {
-    color: '#FF0000',
-    fontSize: 12,
-    marginTop: 6,
-    marginLeft: 4,
-  },
-  buttonSection: {
-    width: '85%',
-    maxWidth: 340,
-  },
+  inputError: { borderColor: '#FF0000', borderWidth: 1.5 },
+  errorText: { color: '#FF0000', fontSize: 12, marginTop: 6, marginLeft: 4 },
+  buttonSection: { width: '85%', maxWidth: 340 },
   submitButton: {
-    backgroundColor: '#FF4500',
-    height: 52,
-    borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+    backgroundColor: '#FF4500', height: 52, borderRadius: 26, justifyContent: 'center',
+    alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 3, elevation: 3,
   },
-  submitButtonDisabled: {
-    backgroundColor: '#FFAB91',
-  },
-  submitButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-
-  // ==========================================
-  // 【不要になるCSS】画像ができたら丸ごと削除OK！
-  // ==========================================
-  logoMock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  iconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FF4500',
-    marginRight: 8,
-  },
-  eye: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    position: 'absolute',
-    borderWidth: 1,
-    borderColor: '#000',
-  },
-  logoText: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#004499',
-  },
+  submitButtonDisabled: { backgroundColor: '#FFAB91' },
+  submitButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', letterSpacing: 1 },
 });
