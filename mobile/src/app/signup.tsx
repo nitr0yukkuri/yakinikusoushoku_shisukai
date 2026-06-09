@@ -12,18 +12,51 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+
+const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
 export default function SignUpScreen() {
+  const router = useRouter();
   const [userId, setUserId] = useState('');
   const [userIdError, setUserIdError] = useState(''); 
   const [userName, setUserName] = useState('');
   const [iconUri, setIconUri] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSignUp = () => {
-    console.log('登録データ:', { userId, userName, iconUri });
-    // TODO: ここでバックエンドへ新規ユーザー作成のAPIリクエストを送る
+  const handleSignUp = async () => {
+    const token = localStorage.getItem('matsunya_auth_token');
+    if (!token) {
+      console.error('Sign Up Failed: login token was not found.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const res = await fetch(`${apiUrl}/auth/profile`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          userName,
+          profileImage: iconUri ?? '',
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body?.error ?? 'Sign up failed.');
+      }
+      console.log('Sign Up Success:', body.user);
+      router.replace('/home');
+    } catch (error) {
+      console.error('Sign Up Failed:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
-
   const handlePickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -122,10 +155,10 @@ export default function SignUpScreen() {
             <TouchableOpacity 
               style={[
                 styles.submitButton,
-                (!userId || !userName || userIdError !== '') && styles.submitButtonDisabled
+                (!userId || !userName || userIdError !== '' || isSubmitting) && styles.submitButtonDisabled
               ]} 
               onPress={handleSignUp}
-              disabled={!userId || !userName || userIdError !== ''}
+              disabled={!userId || !userName || userIdError !== '' || isSubmitting}
               activeOpacity={0.8}
             >
               <Text style={styles.submitButtonText}>新規登録</Text>

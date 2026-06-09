@@ -109,3 +109,7 @@ COMMENT ON COLUMN auth_users.picture_url IS 'Googleプロフィール画像URL';
 COMMENT ON COLUMN auth_users.email_verified IS 'Googleでメール確認済みか';
 
 CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users (email);
+
+ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS user_id TEXT;
+ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS profile_image TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_user_id ON auth_users (user_id) WHERE user_id IS NOT NULL;

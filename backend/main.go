@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -39,6 +40,21 @@ type googleAuthResponse struct {
 	User  authUser `json:"user"`
 }
 
+type profileRequest struct {
+	UserID       string `json:"userId"`
+	UserName     string `json:"userName"`
+	ProfileImage string `json:"profileImage"`
+}
+
+type appTokenClaims struct {
+	Sub       string  `json:"sub"`
+	GoogleSub string  `json:"google_sub"`
+	Email     string  `json:"email"`
+	Name      string  `json:"name"`
+	Iat       float64 `json:"iat"`
+	Exp       float64 `json:"exp"`
+}
+
 func main() {
 	_ = godotenv.Load("../.env")
 
@@ -60,6 +76,11 @@ func main() {
 	if err := pool.Ping(ctxPing); err != nil {
 		log.Fatalf("db ping failed: %v", err)
 	}
+	ctxSchema, cancelSchema := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelSchema()
+	if err := ensureAuthProfileSchema(ctxSchema, pool); err != nil {
+		log.Fatalf("auth profile schema failed: %v", err)
+	}
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
@@ -67,6 +88,7 @@ func main() {
 	})
 
 	http.HandleFunc("/auth/google", withCORS(handleGoogleAuth(pool)))
+	http.HandleFunc("/auth/profile", withCORS(handleAuthProfile(pool)))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -110,7 +132,7 @@ func withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, PUT, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -206,6 +228,96 @@ func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Pa
 	return user, err
 }
 
+func ensureAuthProfileSchema(ctx context.Context, pool *pgxpool.Pool) error {
+	_, err := pool.Exec(ctx, `
+		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS user_id TEXT;
+		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS profile_image TEXT;
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_user_id ON auth_users (user_id) WHERE user_id IS NOT NULL;
+	`)
+	return err
+}
+
+func handleAuthProfile(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost && r.Method != http.MethodPut {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		claims, err := claimsFromAuthorization(r)
+		if err != nil {
+			writeJSONError(w, http.StatusUnauthorized, err.Error())
+			return
+		}
+
+		var req profileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+
+		req.UserID = strings.TrimSpace(req.UserID)
+		req.UserName = strings.TrimSpace(req.UserName)
+		req.ProfileImage = strings.TrimSpace(req.ProfileImage)
+		if req.UserID == "" || req.UserName == "" {
+			writeJSONError(w, http.StatusBadRequest, "userId and userName are required")
+			return
+		}
+		if !isUserID(req.UserID) {
+			writeJSONError(w, http.StatusBadRequest, "userId must be alphanumeric")
+			return
+		}
+
+		userNo, err := strconv.ParseInt(claims.Sub, 10, 64)
+		if err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid token subject")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+
+		var user authUser
+		err = pool.QueryRow(ctx, `
+			UPDATE auth_users
+			SET user_id = $1,
+				name = $2,
+				profile_image = NULLIF($3, ''),
+				updated_at = now()
+			WHERE id = $4
+			RETURNING id, google_sub, COALESCE(email, ''), COALESCE(name, ''), COALESCE(picture_url, ''), email_verified
+		`, req.UserID, req.UserName, req.ProfileImage, userNo).Scan(
+			&user.ID,
+			&user.GoogleSub,
+			&user.Email,
+			&user.Name,
+			&user.PictureURL,
+			&user.EmailVerified,
+		)
+		if err != nil {
+			log.Printf("auth profile update error: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "failed to save profile")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"user": user})
+	}
+}
+
+func claimsFromAuthorization(r *http.Request) (appTokenClaims, error) {
+	auth := r.Header.Get("Authorization")
+	token, ok := strings.CutPrefix(auth, "Bearer ")
+	if !ok || strings.TrimSpace(token) == "" {
+		return appTokenClaims{}, fmt.Errorf("authorization token is required")
+	}
+
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		return appTokenClaims{}, fmt.Errorf("JWT_SECRET is not configured")
+	}
+	return validateAppToken(strings.TrimSpace(token), secret)
+}
+
 func signAppToken(user authUser, secret string) (string, error) {
 	now := time.Now()
 	header := map[string]string{"alg": "HS256", "typ": "JWT"}
@@ -234,6 +346,46 @@ func signAppToken(user authUser, secret string) (string, error) {
 	}
 	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	return unsigned + "." + signature, nil
+}
+
+func validateAppToken(token string, secret string) (appTokenClaims, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return appTokenClaims{}, fmt.Errorf("invalid token")
+	}
+
+	unsigned := parts[0] + "." + parts[1]
+	mac := hmac.New(sha256.New, []byte(secret))
+	if _, err := mac.Write([]byte(unsigned)); err != nil {
+		return appTokenClaims{}, err
+	}
+	expected := mac.Sum(nil)
+	actual, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil || !hmac.Equal(actual, expected) {
+		return appTokenClaims{}, fmt.Errorf("invalid token")
+	}
+
+	claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return appTokenClaims{}, fmt.Errorf("invalid token")
+	}
+	var claims appTokenClaims
+	if err := json.Unmarshal(claimsJSON, &claims); err != nil {
+		return appTokenClaims{}, fmt.Errorf("invalid token")
+	}
+	if claims.Exp <= float64(time.Now().Unix()) {
+		return appTokenClaims{}, fmt.Errorf("token expired")
+	}
+	return claims, nil
+}
+
+func isUserID(value string) bool {
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func claimString(claims map[string]any, key string) string {

@@ -61,6 +61,7 @@ export default function LoginScreen() {
       })
       .then((body) => {
         console.log('Google Login Success:', body.user.email);
+        localStorage.setItem('matsunya_auth_token', body.token);
         router.push('/signup');
       })
       .catch((error: Error) => {
