@@ -146,6 +146,14 @@ npx expo start
 ```
 
 ---
+### 5. なんかフロントエンドとかでバグったとき
+
+
+```bash
+cd mobile
+npx expo start -c
+```
+
 
 ## 環境変数一覧
 

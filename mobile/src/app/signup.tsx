@@ -50,7 +50,7 @@ export default function SignUpScreen() {
         throw new Error(body?.error ?? 'Sign up failed.');
       }
       console.log('Sign Up Success:', body.user);
-      router.push('/home');
+      router.replace('/home');
     } catch (error) {
       console.error('Sign Up Failed:', error);
     } finally {
