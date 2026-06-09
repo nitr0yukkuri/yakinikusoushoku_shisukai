@@ -93,18 +93,6 @@ const styles = StyleSheet.create({
     width: 260,   //横幅
     height: 90,   //縦幅
 
-    //iOS向けの影設定
-    shadowColor: '#d4ff00',   //影の色
-    shadowOffset: {
-      width: 0,                 //横方向
-      height: 3,                //縦方向
-    },
-    shadowOpacity: 0.5,         //影の濃さ（0.0 〜 1.0 の間）
-    shadowRadius: 3,            //影のぼかし具合
-
-    //Android向けの影設定
-    elevation: 5,               //影の強さ
-
     marginLeft: -35,   //ロゴ単体の左端からの距離
   },
   iconContainer: {
