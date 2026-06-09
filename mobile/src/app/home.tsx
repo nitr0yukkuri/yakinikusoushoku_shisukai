@@ -16,7 +16,7 @@ export default function HomeScreen() {
         <View style={styles.contentWrapper} pointerEvents="box-none">
           <View style={styles.header}>
             <Image
-              source={require('../../assets/images/Matsunya_logo.png')}
+              source={require('../../assets/images/matsunya-logo.png')}
               style={styles.logoImage}
               resizeMode="contain"
             />
@@ -71,11 +71,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 5,
   },
   logoImage: {
-    width: 220,
-    height: 60,
+    width: 260,
+    height: 90,
+    marginLeft: -35,
   },
   iconContainer: {
     backgroundColor: '#ffffff',
