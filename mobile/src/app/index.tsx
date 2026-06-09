@@ -1,6 +1,7 @@
 import * as AuthSession from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { StyleSheet, View, Image, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -23,6 +24,7 @@ const googleAuthClientId = googleClientId || 'missing-google-client-id';
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
 export default function LoginScreen() {
+  const router = useRouter();
   const redirectUri = useMemo(
     () => AuthSession.makeRedirectUri({ scheme: 'frontend', path: 'auth' }),
     []
@@ -55,13 +57,14 @@ export default function LoginScreen() {
       })
       .then((body) => {
         console.log('Google Login Success:', body.user.email);
+        router.replace('/signup');
         // モバイルアプリの場合はAsyncStorageの使用を推奨します
         // localStorage.setItem('matsunya_auth_token', body.token); 
       })
       .catch((error: Error) => {
         console.error('Google Login Failed:', error.message);
       });
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (response?.type === 'success') {

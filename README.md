@@ -151,7 +151,7 @@ npx expo start
 
 ```bash
 cd mobile
-npx expo start -c
+ -c
 ```
 
 

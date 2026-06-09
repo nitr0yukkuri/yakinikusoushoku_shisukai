@@ -1,42 +1,30 @@
 import React from 'react';
-import { View, Text, StyleSheet, ImageBackground, TouchableOpacity, SafeAreaView, Image } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, SafeAreaView, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { AppMap } from '../components/AppMap';
 import { Footer } from '../components/Footer';
 
 export default function HomeScreen() {
   return (
     <View style={styles.container}>
-      {/* 背景の地図画像（仮） */}
-      <ImageBackground 
-        source={require('../../assets/images/googlemap.png')} 
-        style={styles.mapBackground}
-        resizeMode="cover"
-      >
-        <SafeAreaView style={styles.safeArea}>
-          
-          {/* ヘッダー領域 */}
-          <View style={styles.header}>
-            {/* 左上：ロゴ */}
-              <Image
-                source={require('../../assets/images/Matsunya_logo.png')}
-                style={styles.logoImage}
-                resizeMode="contain" // 画像の縦横比を崩さずに枠内に収める設定
-              />
-            
-            {/* 本来ここアイコンの画像*/}
-            <TouchableOpacity style={styles.iconContainer}>
-              <Ionicons name="person" size={26} color="#2330df" />
-            </TouchableOpacity>
-          </View>
+      <AppMap style={styles.map} />
+      <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
+        <View style={styles.header}>
+          <Image
+            source={require('../../assets/images/Matsunya_logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
 
-          {/* メインコンテンツエリア（将来地図のピンなどが表示される場所） */}
-          <View style={styles.mainContent} />
+          <TouchableOpacity style={styles.iconContainer}>
+            <Ionicons name="person" size={26} color="#2330df" />
+          </TouchableOpacity>
+        </View>
 
-          {/* 修正した緑色の5ボタンフッター */}
-          <Footer />
+        <View style={styles.mainContent} pointerEvents="none" />
 
-        </SafeAreaView>
-      </ImageBackground>
+        <Footer />
+      </SafeAreaView>
     </View>
   );
 }
@@ -46,10 +34,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  mapBackground: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
+  map: {
+    ...StyleSheet.absoluteFillObject,
   },
   safeArea: {
     flex: 1,
@@ -61,16 +47,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
   },
-
-logoImage: {
-    width: 220,  // ロゴ画像の横幅
-    height: 60, // ロゴ画像の縦幅
+  logoImage: {
+    width: 220,
+    height: 60,
   },
-
   iconContainer: {
     backgroundColor: '#ffffff',
-    padding: 12, 
-    borderRadius: 30, 
+    padding: 12,
+    borderRadius: 30,
     borderWidth: 2,
     borderColor: '#515151',
   },
