@@ -21,7 +21,7 @@ export default function HomeScreen() {
             
             <View style={styles.header}>
               <Image
-                source={require('../../assets/images/Matsunya_logo.png')}
+                source={require('../../assets/images/matsunya-logo.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
               />
@@ -86,12 +86,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: 16,  //ロゴとアイコンのの左端からの距離
+    paddingTop: 5,         //ロゴとアイコンの画面上部からの距離
   },
   logoImage: {
-    width: 220,
-    height: 60,
+    width: 260,   //横幅
+    height: 90,   //縦幅
+
+    //iOS向けの影設定
+    shadowColor: '#d4ff00',   //影の色
+    shadowOffset: {
+      width: 0,                 //横方向
+      height: 3,                //縦方向
+    },
+    shadowOpacity: 0.5,         //影の濃さ（0.0 〜 1.0 の間）
+    shadowRadius: 3,            //影のぼかし具合
+
+    //Android向けの影設定
+    elevation: 5,               //影の強さ
+
+    marginLeft: -35,   //ロゴ単体の左端からの距離
   },
   iconContainer: {
     backgroundColor: '#ffffff',
