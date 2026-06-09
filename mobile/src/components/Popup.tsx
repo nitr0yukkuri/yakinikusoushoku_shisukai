@@ -1,15 +1,18 @@
-import React from 'react';
-import { Modal, View, Text, TouchableOpacity, StyleSheet, ModalProps, Platform } from 'react-native';
-// アイコンを使用するために Ionicons をインポート
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, Animated, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; 
 
-interface PopupProps extends ModalProps {
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// ModalPropsを外して独自に定義します
+interface PopupProps {
   visible: boolean;
   onClose: () => void;
   title?: string;
   message?: string;
   children?: React.ReactNode;
-  icon?: keyof typeof Ionicons.glyphMap; // 左上のアイコンを自由に変えられるようにProps化（デフォルトは通知アイコン）
+  icon?: keyof typeof Ionicons.glyphMap;
+  sheetHeight?: number;
 }
 
 export const Popup: React.FC<PopupProps> = ({
@@ -18,105 +21,129 @@ export const Popup: React.FC<PopupProps> = ({
   title,
   message,
   children,
-  icon = "notifications-outline", // デフォルトのアイコン指定
-  ...props
+  icon = "notifications-outline",
+  sheetHeight = SCREEN_HEIGHT * 0.7, // 高さ75%
 }) => {
+  const [isRendered, setIsRendered] = useState(false);
+  
+  // スライド用とフェード用の2つのアニメーションを準備
+  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      setIsRendered(true);
+      // 表示：スライドインと背景のフェードインを同時に実行
+      Animated.parallel([
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        })
+      ]).start();
+    } else {
+      // 非表示：スライドアウトと背景のフェードアウトを同時に実行
+      Animated.parallel([
+        Animated.timing(translateY, {
+          toValue: SCREEN_HEIGHT,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        })
+      ]).start(() => {
+        setIsRendered(false); // アニメーション完了後に完全に消す
+      });
+    }
+  }, [visible]);
+
+  // 開いていない時は何も描画しない
+  if (!visible && !isRendered) return null;
+
   return (
-    <Modal
-      transparent={true}
-      animationType="fade"
-      visible={visible}
-      onRequestClose={onClose}
-      {...props}
-    >
-      <View style={styles.overlay}>
-        <View style={styles.popupContainer}>
-          
-          {/* 【新設】ヘッダー領域：左側にアイコン、右側に×ボタン */}
-          <View style={styles.headerContainer}>
-            {/* デザインや色合い（#515151）を変えずに左上に配置 */}
-            <Ionicons name={icon} size={26} color="#515151" />
-            
-            {/* 右上の×ボタン */}
-            <TouchableOpacity onPress={onClose} style={styles.closeXButton} activeOpacity={0.6}>
-              <Ionicons name="close" size={28} color="#515151" />
-            </TouchableOpacity>
-          </View>
+    <View style={styles.absoluteContainer}>
+      {/* 背景（オーバーレイ） */}
+      <TouchableWithoutFeedback onPress={onClose}>
+        <Animated.View style={[styles.overlay, { opacity }]} />
+      </TouchableWithoutFeedback>
 
-          {/* コンテンツ表示領域 */}
-          <View style={styles.contentContainer}>
-            {title && <Text style={styles.title}>{title}</Text>}
-            {message && <Text style={styles.message}>{message}</Text>}
-            
-            {/* ボタン以外の追加コンテンツ（画像など）があればここに表示されます */}
-            {children}
-          </View>
-
+      {/* ボトムシート本体 */}
+      <Animated.View style={[styles.popupContainer, { height: sheetHeight, transform: [{ translateY }] }]}>
+        
+        {/* ドラッグハンドル */}
+        <View style={styles.dragHandleWrapper}>
+          <View style={styles.dragHandle} />
         </View>
-      </View>
-    </Modal>
+
+        {/* ヘッダー領域 */}
+        <View style={styles.headerContainer}>
+          <View style={styles.headerLeft}>
+              <Ionicons name={icon} size={26} color="#515151" />
+          </View>
+          {title && <Text style={styles.title}>{title}</Text>}
+          <View style={styles.headerRight}>
+              <TouchableOpacity onPress={onClose} style={styles.closeXButton} activeOpacity={0.6}>
+                <Ionicons name="close" size={28} color="#515151" />
+              </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* コンテンツ領域 */}
+        <View style={styles.contentContainer}>
+          {message && <Text style={styles.message}>{message}</Text>}
+          {children}
+        </View>
+
+      </Animated.View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  absoluteContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1000,
+    overflow: 'hidden', // フッター側にはみ出して表示されないようにする
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', // 背景の暗転
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   popupContainer: {
-    width: '80%',
-    height: '55%', // 縦長にするために高さを明示的に指定
-    backgroundColor: '#e2fbe2', // 背景を薄緑色に変更
-    borderRadius: 20,
+    width: '100%',
+    backgroundColor: '#e2fbe2',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
     padding: 20,
-    // 影の設定（Web警告対策済み）
+    paddingTop: 10,
+    position: 'absolute',
+    bottom: 0,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.2,
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.15,
         shadowRadius: 5,
       },
-      android: {
-        elevation: 6,
-      },
-      web: {
-        boxShadow: '0px 3px 6px rgba(0, 0, 0, 0.15)' as any,
-      },
+      android: { elevation: 10 },
+      web: { boxShadow: '0px -3px 6px rgba(0, 0, 0, 0.15)' as any },
     }),
   },
-  headerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    height: 40,
-  },
-  closeXButton: {
-    padding: 4, // タップしやすくするための押し幅
-  },
-  contentContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center', // 文字やコンテンツを上下中央に配置
-    width: '100%',
-    paddingBottom: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 14,
-    textAlign: 'center',
-    color: '#333',
-  },
-  message: {
-    fontSize: 15,
-    color: '#555',
-    textAlign: 'center',
-    lineHeight: 22,
-    horizontalAlign: 'center',
-  },
+  dragHandleWrapper: { alignItems: 'center', width: '100%', paddingBottom: 10 },
+  dragHandle: { width: 40, height: 5, backgroundColor: '#cccccc', borderRadius: 2.5 },
+  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: 45, paddingHorizontal: 4 },
+  headerLeft: { width: 40, alignItems: 'flex-start' },
+  headerRight: { width: 40, alignItems: 'flex-end' },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#333', textAlign: 'center', flex: 1 },
+  closeXButton: { padding: 4 },
+  contentContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: 20 },
+  message: { fontSize: 16, color: '#555', textAlign: 'center', lineHeight: 24 },
 });
