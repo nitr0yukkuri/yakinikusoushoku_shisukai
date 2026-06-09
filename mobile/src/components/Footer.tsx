@@ -2,7 +2,10 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; 
 
-export const Footer = () => {
+interface FooterProps {
+  onPressNotification?: () => void;
+}
+export const Footer: React.FC<FooterProps> = ({ onPressNotification }) => {
   return (
     <View style={styles.footerContainer}>
       {/* 1. フレンド */}
@@ -37,7 +40,7 @@ export const Footer = () => {
       </TouchableOpacity>
 
       {/* 4. 通知 */}
-      <TouchableOpacity style={styles.tab}>
+      <TouchableOpacity style={styles.tab} onPress={onPressNotification}>
         <View style={styles.iconContainer}>
             <Ionicons name="notifications-outline" size={26} color="#515151" />
         </View>    
