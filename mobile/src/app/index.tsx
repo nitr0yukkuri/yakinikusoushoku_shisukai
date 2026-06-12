@@ -2,15 +2,12 @@ import * as AuthSession from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
-// ★ useState を追加しています
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-// ★ Text を追加しています
-import { StyleSheet, View, Image, TouchableOpacity, Text } from 'react-native';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import { StyleSheet, View, Image, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// ★ ポップアップ用のコンポーネントを読み込み
-import { Popup } from '../components/Popup';
-import ProfileEditSection from '../components/ProfileEditSection';
+
+
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -48,9 +45,6 @@ export default function LoginScreen() {
 
   const canLogin = Boolean(googleClientId && request);
 
-  // ★ 追加：ポップアップの表示・非表示を管理する状態
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
-
   const loginWithBackend = useCallback((idToken: string) => {
     fetch(`${apiUrl}/auth/google`, {
       method: 'POST',
@@ -67,6 +61,8 @@ export default function LoginScreen() {
       .then((body) => {
         console.log('Google Login Success:', body.user.email);
         router.replace('/signup');
+        // モバイルアプリの場合はAsyncStorageの使用を推奨します
+        // localStorage.setItem('matsunya_auth_token', body.token); 
       })
       .catch((error: Error) => {
         console.error('Google Login Failed:', error.message);
@@ -87,17 +83,6 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* ★ 追加：画面右上に配置するプロフィールボタン */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.iconButton} 
-          onPress={() => setIsProfileOpen(true)} // ここを押すとポップアップが開く
-          activeOpacity={0.7}
-        >
-          <Text style={styles.iconText}>👤</Text> 
-        </TouchableOpacity>
-      </View>
-
       <View style={styles.logoContainer}>
         <Image 
           source={require('../../assets/images/matsunya-logo.png')} 
@@ -115,16 +100,6 @@ export default function LoginScreen() {
           />
         </TouchableOpacity>
       </View>
-
-      {/* ★ 追加：プロフィール設定用のポップアップ本体 */}
-      <Popup 
-        visible={isProfileOpen} 
-        onClose={() => setIsProfileOpen(false)}
-        title="プロフィール設定"
-        icon="person-outline"
-      >
-        <ProfileEditSection onSaveSuccess={() => setIsProfileOpen(false)} />
-      </Popup>
     </SafeAreaView>
   );
 }
@@ -136,33 +111,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // ★ 追加：右上のボタンの配置用スタイル
-  header: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    zIndex: 10,
-  },
-  // ★ 追加：右上のボタンの見た目
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  iconText: {
-    fontSize: 22,
-  },
   logoContainer: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-end', // ロゴを下に寄せる
     alignItems: 'center',
     width: '100%',
     paddingBottom: 20,
@@ -175,7 +126,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'flex-start', // ボタンを上に寄せる
     paddingTop: 20,
   },
   googleButtonImage: {
