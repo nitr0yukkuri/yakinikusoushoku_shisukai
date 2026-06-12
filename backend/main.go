@@ -40,10 +40,12 @@ type googleAuthResponse struct {
 	User  authUser `json:"user"`
 }
 
+// ★追加: Bio（自己紹介）を追加しました
 type profileRequest struct {
 	UserID       string `json:"userId"`
 	UserName     string `json:"userName"`
 	ProfileImage string `json:"profileImage"`
+	Bio          string `json:"bio"`
 }
 
 type appTokenClaims struct {
@@ -229,9 +231,11 @@ func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Pa
 }
 
 func ensureAuthProfileSchema(ctx context.Context, pool *pgxpool.Pool) error {
+	// ★追加: データベースのauth_usersテーブルに「bio」カラムを自動追加するSQL
 	_, err := pool.Exec(ctx, `
 		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS user_id TEXT;
 		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS profile_image TEXT;
+		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS bio TEXT;
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_user_id ON auth_users (user_id) WHERE user_id IS NOT NULL;
 	`)
 	return err
@@ -259,11 +263,14 @@ func handleAuthProfile(pool *pgxpool.Pool) http.HandlerFunc {
 		req.UserID = strings.TrimSpace(req.UserID)
 		req.UserName = strings.TrimSpace(req.UserName)
 		req.ProfileImage = strings.TrimSpace(req.ProfileImage)
-		if req.UserID == "" || req.UserName == "" {
-			writeJSONError(w, http.StatusBadRequest, "userId and userName are required")
+		req.Bio = strings.TrimSpace(req.Bio) // ★追加
+
+		// ★修正: userIdが空でもエラーにしないように変更
+		if req.UserName == "" {
+			writeJSONError(w, http.StatusBadRequest, "userName is required")
 			return
 		}
-		if !isUserID(req.UserID) {
+		if req.UserID != "" && !isUserID(req.UserID) {
 			writeJSONError(w, http.StatusBadRequest, "userId must be alphanumeric")
 			return
 		}
@@ -278,15 +285,17 @@ func handleAuthProfile(pool *pgxpool.Pool) http.HandlerFunc {
 		defer cancel()
 
 		var user authUser
+		// ★修正: DBへの保存処理にbioを含めました
 		err = pool.QueryRow(ctx, `
 			UPDATE auth_users
-			SET user_id = $1,
+			SET user_id = NULLIF($1, ''),
 				name = $2,
 				profile_image = NULLIF($3, ''),
+				bio = $4,
 				updated_at = now()
-			WHERE id = $4
+			WHERE id = $5
 			RETURNING id, google_sub, COALESCE(email, ''), COALESCE(name, ''), COALESCE(picture_url, ''), email_verified
-		`, req.UserID, req.UserName, req.ProfileImage, userNo).Scan(
+		`, req.UserID, req.UserName, req.ProfileImage, req.Bio, userNo).Scan(
 			&user.ID,
 			&user.GoogleSub,
 			&user.Email,

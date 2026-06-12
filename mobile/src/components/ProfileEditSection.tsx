@@ -15,44 +15,72 @@ interface ProfileEditSectionProps {
   onSaveSuccess: () => void; // 保存が成功したときにポップアップを閉じるための関数
 }
 
+const [imageBase64, setImageBase64] = useState<string | null>(null);
+
 export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSectionProps) {
   const [name, setName] = useState<string>('現在のユーザー名');
   // ★自己紹介用の状態（初期値）を追加
   const [bio, setBio] = useState<string>('よろしくお願いします！');
   const [imageUri, setImageUri] = useState<string | null>(null);
 
-  const pickImage = async () => {
+const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permissionResult.granted === false) {
       Alert.alert('エラー', '画像を選択するにはカメラロールへのアクセス許可が必要です。');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
+const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.8,
+      quality: 0.3,   // データサイズを小さくするために画質を下げます
+      base64: true,   // ★追加: 画像を文字列(Base64)として取得します
     });
 
-    if (!result.canceled) {
+if (!result.canceled) {
       setImageUri(result.assets[0].uri);
+      // JSONで送るためにBase64形式のデータを保存します
+      setImageBase64(`data:image/jpeg;base64,${result.assets[0].base64}`);
     }
   };
 
-  const handleSave = async () => {
+const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('エラー', '名前を入力してください。');
       return;
     }
 
-    try {
-      // TODO: バックエンドAPIに送る際は name, bio, imageUri を送信します
-      console.log('保存データ:', { name, bio, imageUri });
+   try {
+      // APIエンドポイント (ローカル開発環境の場合は自分のPCのIPアドレス等に書き換えてください)
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+      
+      // ★注意★
+      // 現在のバックエンドは「ログイン済みのユーザーのみ」がプロファイルを更新できる仕様です。
+      // そのため、実際にはGoogleログイン時に取得した "token" をヘッダーにセットする必要があります。
+      // const token = '取得したトークン'; 
+
+      const response = await fetch(`${apiUrl}/auth/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          // 'Authorization': `Bearer ${token}` // ★実装が進んだらコメントアウトを外してトークンを入れてください
+        },
+        body: JSON.stringify({
+          userName: name,
+          bio: bio,
+          profileImage: imageBase64 // Base64文字列を送る
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('バックエンドのエラー');
+      }
 
       Alert.alert('成功', 'プロフィールを更新しました。');
-      onSaveSuccess(); // ポップアップを閉じる
+      onSaveSuccess(); 
     } catch (error) {
+      console.error(error);
       Alert.alert('エラー', 'プロフィールの更新に失敗しました。');
     }
   };
