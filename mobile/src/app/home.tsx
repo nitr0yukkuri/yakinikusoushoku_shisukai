@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, SafeAreaView, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { AppMap } from '../components/AppMap';
 import { Footer } from '../components/Footer';
 import { Popup } from '../components/Popup';
@@ -8,6 +9,7 @@ import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
 
 export default function HomeScreen() {
+  const router = useRouter();
   // 通知用のポップアップ状態
   const [isPopupVisible, setPopupVisible] = useState(false);
   // ★追加：プロフィール用のポップアップ状態
@@ -59,7 +61,10 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.footerWrapper}>
-          <Footer onPressNotification={() => setPopupVisible(true)} />
+          <Footer
+            onPressNotification={() => setPopupVisible(true)}
+            onPressSettings={() => router.push('/settings')}
+          />
         </View>
       </SafeAreaView>
     </View>

@@ -4,8 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface FooterProps {
   onPressNotification?: () => void;
+  onPressSettings?: () => void;
 }
-export const Footer: React.FC<FooterProps> = ({ onPressNotification }) => {
+export const Footer: React.FC<FooterProps> = ({ onPressNotification, onPressSettings }) => {
   return (
     <View style={styles.footerContainer}>
       {/* 1. フレンド */}
@@ -48,7 +49,7 @@ export const Footer: React.FC<FooterProps> = ({ onPressNotification }) => {
       </TouchableOpacity>
 
       {/* 5. 設定 */}
-      <TouchableOpacity style={styles.tab}>
+      <TouchableOpacity style={styles.tab} onPress={onPressSettings}>
         <View style={styles.iconContainer}>
             <Ionicons name="settings-outline" size={26} color="#515151" />
         </View>
