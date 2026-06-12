@@ -6,6 +6,9 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import { StyleSheet, View, Image, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+
+
+
 WebBrowser.maybeCompleteAuthSession();
 
 type AuthResponse = {
