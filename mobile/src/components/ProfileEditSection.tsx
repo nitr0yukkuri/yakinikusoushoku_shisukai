@@ -7,6 +7,7 @@ import {
   Image,
   StyleSheet,
   Alert,
+  ScrollView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -16,6 +17,8 @@ interface ProfileEditSectionProps {
 
 export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSectionProps) {
   const [name, setName] = useState<string>('現在のユーザー名');
+  // ★自己紹介用の状態（初期値）を追加
+  const [bio, setBio] = useState<string>('よろしくお願いします！');
   const [imageUri, setImageUri] = useState<string | null>(null);
 
   const pickImage = async () => {
@@ -44,7 +47,9 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
     }
 
     try {
-      // バックエンドへの送信処理（必要に応じて）
+      // TODO: バックエンドAPIに送る際は name, bio, imageUri を送信します
+      console.log('保存データ:', { name, bio, imageUri });
+
       Alert.alert('成功', 'プロフィールを更新しました。');
       onSaveSuccess(); // ポップアップを閉じる
     } catch (error) {
@@ -53,8 +58,13 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>プロフィール設定</Text>
+    // キーボードが出たり項目が増えたりしてもスクロールできるようにScrollViewにしています
+    <ScrollView 
+      style={styles.scrollView} 
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+    >
+      <Text style={styles.title}>アイコン設定</Text>
 
       {/* アイコン画像 */}
       <TouchableOpacity onPress={pickImage} style={styles.avatarButton}>
@@ -79,15 +89,34 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
         />
       </View>
 
+      {/* ★追加：自己紹介入力 */}
+      <View style={styles.inputContainer}>
+        <Text style={styles.label}>自己紹介</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]} // 複数行用のスタイルを適用
+          value={bio}
+          onChangeText={setBio}
+          placeholder="簡単な自己紹介を入力してください"
+          maxLength={100} // 最大100文字
+          multiline={true} // 複数行入力を有効にする
+          numberOfLines={4} // Android用のおおよその行数目安
+          textAlignVertical="top" // iOS/Androidで文字が上から始まるようにする
+        />
+        <Text style={styles.charCount}>{bio.length} / 100</Text>
+      </View>
+
       {/* 保存ボタン */}
       <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
         <Text style={styles.saveButtonText}>保存する</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  scrollView: {
+    width: '100%',
+  },
   container: {
     alignItems: 'center',
     paddingVertical: 8,
@@ -128,7 +157,7 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     width: '100%',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   label: {
     fontSize: 14,
@@ -145,12 +174,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#fafafa',
   },
+  // ★自己紹介用の長方形の枠スタイル
+  textArea: {
+    height: 100, // 高さを広げる
+    paddingTop: 12, // 上側の余白を調整
+  },
+  // ★右下に文字数を表示するスタイル
+  charCount: {
+    textAlign: 'right',
+    fontSize: 12,
+    color: '#888',
+    marginTop: 4,
+  },
   saveButton: {
     width: '100%',
     backgroundColor: '#007AFF',
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
+    marginTop: 10,
   },
   saveButtonText: {
     color: '#fff',
