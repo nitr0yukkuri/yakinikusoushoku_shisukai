@@ -5,10 +5,15 @@ import { useRouter } from 'expo-router';
 import { AppMap } from '../components/AppMap';
 import { Footer } from '../components/Footer';
 import { Popup } from '../components/Popup';
+// ★追加：プロフィール編集フォームの部品を読み込む
+import ProfileEditSection from '../components/ProfileEditSection';
 
 export default function HomeScreen() {
   const router = useRouter();
+  // 通知用のポップアップ状態
   const [isPopupVisible, setPopupVisible] = useState(false);
+  // ★追加：プロフィール用のポップアップ状態
+  const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -23,19 +28,36 @@ export default function HomeScreen() {
               resizeMode="contain"
             />
 
-            <TouchableOpacity style={styles.iconContainer}>
+            {/* ★修正：onPressを追加してプロフィールポップアップを開くようにした */}
+            <TouchableOpacity 
+              style={styles.iconContainer} 
+              onPress={() => setProfilePopupVisible(true)}
+              activeOpacity={0.7}
+            >
               <Ionicons name="person" size={26} color="#2330df" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.mainContent} pointerEvents="none" />
 
+          {/* 通知用のポップアップ */}
           <Popup
             visible={isPopupVisible}
             onClose={() => setPopupVisible(false)}
             title="通知"
             message="新着の通知はありません。"
           />
+
+          {/* ★追加：プロフィール設定用のポップアップ */}
+          <Popup
+            visible={isProfilePopupVisible}
+            onClose={() => setProfilePopupVisible(false)}
+            title="プロフィール設定"
+            icon="person-outline"
+          >
+            <ProfileEditSection onSaveSuccess={() => setProfilePopupVisible(false)} />
+          </Popup>
+
         </View>
 
         <View style={styles.footerWrapper}>
