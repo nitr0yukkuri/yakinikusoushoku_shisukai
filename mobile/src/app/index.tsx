@@ -2,12 +2,15 @@ import * as AuthSession from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { StyleSheet, View, Image, TouchableOpacity } from 'react-native';
+// ★ useStateを追加
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+// ★ Textを追加
+import { StyleSheet, View, Image, TouchableOpacity, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-
-
+// ★ 作成したコンポーネントをインポート
+import { Popup } from '../components/Popup'; 
+import ProfileEditSection from '../components/ProfileEditSection';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -44,6 +47,9 @@ export default function LoginScreen() {
   );
 
   const canLogin = Boolean(googleClientId && request);
+
+  // ★ 追加：ポップアップの表示・非表示を管理する状態
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const loginWithBackend = useCallback((idToken: string) => {
     fetch(`${apiUrl}/auth/google`, {
@@ -83,6 +89,17 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* ★ 追加：画面右上のプロフィールアイコンボタン */}
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.iconButton} 
+          onPress={() => setIsProfileOpen(true)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.iconText}>👤</Text> 
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.logoContainer}>
         <Image 
           source={require('../../assets/images/matsunya-logo.png')} 
@@ -100,6 +117,16 @@ export default function LoginScreen() {
           />
         </TouchableOpacity>
       </View>
+
+      {/* ★ 追加：プロフィール設定用のポップアップ */}
+      <Popup 
+        visible={isProfileOpen} 
+        onClose={() => setIsProfileOpen(false)}
+        title="プロフィール設定"
+        icon="person-outline" // Popupコンポーネントに合わせてアイコンを指定
+      >
+        <ProfileEditSection onSaveSuccess={() => setIsProfileOpen(false)} />
+      </Popup>
     </SafeAreaView>
   );
 }
@@ -111,9 +138,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // ★ 追加：ヘッダー（ボタンを右上に絶対配置してロゴと被らないようにする）
+  header: {
+    position: 'absolute',
+    top: 60, // スマホの画面上部の余白に合わせる
+    right: 20,
+    zIndex: 10,
+  },
+  // ★ 追加：アイコンボタンのデザイン
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    // 少し影をつけて浮いているように見せる
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  iconText: {
+    fontSize: 22,
+  },
   logoContainer: {
     flex: 1,
-    justifyContent: 'flex-end', // ロゴを下に寄せる
+    justifyContent: 'flex-end',
     alignItems: 'center',
     width: '100%',
     paddingBottom: 20,
@@ -126,7 +178,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     alignItems: 'center',
-    justifyContent: 'flex-start', // ボタンを上に寄せる
+    justifyContent: 'flex-start',
     paddingTop: 20,
   },
   googleButtonImage: {
