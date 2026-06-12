@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, TextInput, Platform, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, TextInput, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AppMap } from '../components/AppMap';
@@ -9,13 +9,11 @@ import { Popup } from '../components/Popup';
 type SettingsPopup = 'system' | 'pastime' | null;
 
 const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲーム', 'ジム'];
-const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 export default function SettingsScreen() {
   const router = useRouter();
   const [activePopup, setActivePopup] = useState<SettingsPopup>(null);
   const [selectedPastimes, setSelectedPastimes] = useState<string[]>([]);
-  const [panelHeight, setPanelHeight] = useState<number>(SCREEN_HEIGHT * 0.7);
 
   const togglePastime = (option: string) => {
     setSelectedPastimes(prev => 
@@ -41,13 +39,7 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
 
-          <View 
-            style={styles.panel}
-            onLayout={(event) => {
-              const { height } = event.nativeEvent.layout;
-              setPanelHeight(height);
-            }}
-          >
+          <View style={styles.panel}>
             {/* ドラッグハンドル */}
             <View style={styles.dragHandleWrapper}>
               <View style={styles.dragHandle} />
@@ -87,7 +79,6 @@ export default function SettingsScreen() {
             icon="settings-outline"
             slideDirection="right"
             showBackButton
-            sheetHeight={panelHeight}
           >
             <View style={styles.popupBody}>
               <Text style={styles.popupLabel}>メールアドレスの変更</Text>
@@ -112,7 +103,6 @@ export default function SettingsScreen() {
             icon="cafe-outline"
             slideDirection="right"
             showBackButton
-            sheetHeight={panelHeight}
           >
             <View style={styles.chipGrid}>
               {pastimeOptions.map((option) => {
