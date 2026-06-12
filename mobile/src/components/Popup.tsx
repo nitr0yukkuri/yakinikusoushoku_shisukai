@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, Animated, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, Animated, TouchableWithoutFeedback, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -112,10 +112,10 @@ export const Popup: React.FC<PopupProps> = ({
         </View>
 
         {/* コンテンツ領域 */}
-        <View style={styles.contentContainer}>
+        <ScrollView style={styles.contentContainer} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false}>
           {message && <Text style={styles.message}>{message}</Text>}
           {children}
-        </View>
+        </ScrollView>
 
       </Animated.View>
     </View>
@@ -159,6 +159,7 @@ const styles = StyleSheet.create({
   headerRight: { width: 40, alignItems: 'flex-end' },
   title: { fontSize: 20, fontWeight: 'bold', color: '#333', textAlign: 'center', flex: 1 },
   closeXButton: { padding: 4 },
-  contentContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', paddingBottom: 20 },
+  contentContainer: { flex: 1, width: '100%' },
+  contentInner: { alignItems: 'center', justifyContent: 'center', paddingTop: 20, paddingBottom: 20 },
   message: { fontSize: 16, color: '#555', textAlign: 'center', lineHeight: 24 },
 });
