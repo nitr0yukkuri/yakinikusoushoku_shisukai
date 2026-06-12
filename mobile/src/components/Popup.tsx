@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, Animated, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; 
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // ModalPropsを外して独自に定義します
 interface PopupProps {
@@ -13,6 +13,8 @@ interface PopupProps {
   children?: React.ReactNode;
   icon?: keyof typeof Ionicons.glyphMap;
   sheetHeight?: number;
+  slideDirection?: 'bottom' | 'right';
+  showBackButton?: boolean;
 }
 
 export const Popup: React.FC<PopupProps> = ({
@@ -23,11 +25,13 @@ export const Popup: React.FC<PopupProps> = ({
   children,
   icon = "notifications-outline",
   sheetHeight = SCREEN_HEIGHT * 0.7, // 高さ75%
+  slideDirection = 'bottom',
+  showBackButton = false,
 }) => {
   const [isRendered, setIsRendered] = useState(false);
   
   // スライド用とフェード用の2つのアニメーションを準備
-  const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const translateAnim = useRef(new Animated.Value(slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -35,7 +39,7 @@ export const Popup: React.FC<PopupProps> = ({
       setIsRendered(true);
       // 表示：スライドインと背景のフェードインを同時に実行
       Animated.parallel([
-        Animated.timing(translateY, {
+        Animated.timing(translateAnim, {
           toValue: 0,
           duration: 300,
           useNativeDriver: true,
@@ -49,8 +53,8 @@ export const Popup: React.FC<PopupProps> = ({
     } else {
       // 非表示：スライドアウトと背景のフェードアウトを同時に実行
       Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: SCREEN_HEIGHT,
+        Animated.timing(translateAnim, {
+          toValue: slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT,
           duration: 250,
           useNativeDriver: true,
         }),
@@ -76,7 +80,10 @@ export const Popup: React.FC<PopupProps> = ({
       </TouchableWithoutFeedback>
 
       {/* ボトムシート本体 */}
-      <Animated.View style={[styles.popupContainer, { height: sheetHeight, transform: [{ translateY }] }]}>
+      <Animated.View style={[styles.popupContainer, { 
+        height: sheetHeight, 
+        transform: [ slideDirection === 'right' ? { translateX: translateAnim } : { translateY: translateAnim } ] 
+      }]}>
         
         {/* ドラッグハンドル */}
         <View style={styles.dragHandleWrapper}>
@@ -86,13 +93,21 @@ export const Popup: React.FC<PopupProps> = ({
         {/* ヘッダー領域 */}
         <View style={styles.headerContainer}>
           <View style={styles.headerLeft}>
+            {showBackButton ? (
+              <TouchableOpacity onPress={onClose} style={styles.closeXButton} activeOpacity={0.6}>
+                <Ionicons name="arrow-back" size={28} color="#515151" />
+              </TouchableOpacity>
+            ) : (
               <Ionicons name={icon} size={26} color="#515151" />
+            )}
           </View>
           {title && <Text style={styles.title}>{title}</Text>}
           <View style={styles.headerRight}>
+            {!showBackButton && (
               <TouchableOpacity onPress={onClose} style={styles.closeXButton} activeOpacity={0.6}>
                 <Ionicons name="close" size={28} color="#515151" />
               </TouchableOpacity>
+            )}
           </View>
         </View>
 
