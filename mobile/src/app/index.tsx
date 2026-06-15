@@ -1,25 +1,19 @@
-import * as AuthSession from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Image, TouchableOpacity, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
+import { useProfile, UserProfile } from '../contexts/profile-context';
 
 WebBrowser.maybeCompleteAuthSession();
 
 type AuthResponse = {
   token: string;
-  user: {
-    id: number;
-    email: string;
-    name: string;
-    pictureUrl: string;
-    emailVerified: boolean;
-  };
+  user: UserProfile;
 };
 
 // ★修正箇所：.envの設定に合わせて EXPO_PUBLIC_GOOGLE_CLIENT_ID を読み込む
@@ -30,6 +24,8 @@ const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { profile, isHydrated, setSession } = useProfile();
+  const isOAuthLoginRef = useRef(false);
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId: webClientId,
@@ -55,14 +51,17 @@ export default function LoginScreen() {
         }
         return body as AuthResponse;
       })
-      .then((body) => {
+      .then(async (body) => {
+        isOAuthLoginRef.current = true;
+        await setSession({ token: body.token, profile: body.user });
         console.log('Google Login Success:', body.user.email);
         router.replace('/signup');
       })
       .catch((error: Error) => {
+        isOAuthLoginRef.current = false;
         console.error('Google Login Failed:', error.message);
       });
-  }, [router]);
+  }, [router, setSession]);
 
   useEffect(() => {
     if (response?.type === 'success') {
@@ -70,6 +69,11 @@ export default function LoginScreen() {
       if (idToken) loginWithBackend(idToken);
     }
   }, [loginWithBackend, response]);
+
+  useEffect(() => {
+    if (!isHydrated || !profile || isOAuthLoginRef.current) return;
+    router.replace(profile.userId ? '/home' : '/signup');
+  }, [isHydrated, profile, router]);
 
   const handleGoogleLogin = () => {
     if (!canLogin) return;

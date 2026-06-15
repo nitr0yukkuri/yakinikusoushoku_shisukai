@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { AppMap } from '../components/AppMap';
 import { Footer } from '../components/Footer';
 import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
+import { useProfile } from '../contexts/profile-context';
 
 const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲーム', 'ジム'];
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const { profile, avatarUrl, logout } = useProfile();
   // 通知用のポップアップ状態
   const [isPopupVisible, setPopupVisible] = useState(false);
   // プロフィール用のポップアップ状態
@@ -29,9 +34,19 @@ export default function HomeScreen() {
     );
   };
 
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/');
+  };
+
   return (
     <View style={styles.container}>
-      <AppMap style={styles.map} />
+      <AppMap
+        style={styles.map}
+        userId={profile?.userId}
+        userName={profile?.name}
+        profileImage={avatarUrl || undefined}
+      />
 
       <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
         <View style={styles.contentWrapper} pointerEvents="box-none">
@@ -47,7 +62,12 @@ export default function HomeScreen() {
               onPress={() => setProfilePopupVisible(true)}
               activeOpacity={0.7}
             >
-              <Ionicons name="person" size={26} color="#2330df" />
+              <ProfileAvatar
+                name={profile?.name}
+                profileImage={avatarUrl}
+                size={50}
+                style={styles.profileAvatar}
+              />
             </TouchableOpacity>
           </View>
 
@@ -97,11 +117,11 @@ export default function HomeScreen() {
               <Text style={styles.popupLabel}>メールアドレスの変更</Text>
               <TextInput
                 style={styles.emailInput}
-                value="gaikenhoge@gmail.com"
+                value={profile?.email || ''}
                 editable={false}
               />
               <Text style={styles.deleteTitle}>アカウントを削除</Text>
-              <TouchableOpacity style={styles.deleteButton}>
+              <TouchableOpacity style={styles.deleteButton} onPress={handleLogout}>
                 <Ionicons name="trash-outline" size={18} color="#b71c1c" />
                 <Text style={styles.deleteButtonText}>削除する</Text>
               </TouchableOpacity>
@@ -184,10 +204,17 @@ const styles = StyleSheet.create({
   },
   iconContainer: {
     backgroundColor: '#ffffff',
-    padding: 12,
+    width: 54,
+    height: 54,
     borderRadius: 30,
     borderWidth: 2,
     borderColor: '#515151',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  profileAvatar: {
+    borderRadius: 25,
   },
   mainContent: {
     flex: 1,

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"google.golang.org/api/idtoken"
@@ -30,9 +32,12 @@ type googleAuthRequest struct {
 type authUser struct {
 	ID            int64  `json:"id"`
 	GoogleSub     string `json:"googleSub"`
+	UserID        string `json:"userId"`
 	Email         string `json:"email"`
 	Name          string `json:"name"`
 	PictureURL    string `json:"pictureUrl"`
+	ProfileImage  string `json:"profileImage"`
+	Bio           string `json:"bio"`
 	EmailVerified bool   `json:"emailVerified"`
 }
 
@@ -44,6 +49,13 @@ type googleAuthResponse struct {
 type profileRequest struct {
 	UserID       string `json:"userId"`
 	UserName     string `json:"userName"`
+	ProfileImage string `json:"profileImage"`
+	Bio          string `json:"bio"`
+}
+
+type publicProfile struct {
+	UserID       string `json:"userId"`
+	Name         string `json:"name"`
 	ProfileImage string `json:"profileImage"`
 }
 
@@ -135,7 +147,7 @@ func (c *wsClient) readPump(pool *pgxpool.Pool, ctx context.Context) {
 		if err != nil {
 			break
 		}
-		
+
 		c.hub.broadcast <- broadcastMessage{room: c.room, data: message}
 
 		go func(msg string) {
@@ -195,6 +207,7 @@ func main() {
 
 	http.HandleFunc("/auth/google", withCORS(handleGoogleAuth(pool)))
 	http.HandleFunc("/auth/profile", withCORS(handleAuthProfile(pool)))
+	http.HandleFunc("/profiles", withCORS(handlePublicProfile(pool)))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		room := r.URL.Query().Get("room")
@@ -233,7 +246,7 @@ func withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, PUT, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -313,17 +326,25 @@ func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Pa
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (google_sub) DO UPDATE SET
 			email = EXCLUDED.email,
-			name = EXCLUDED.name,
+			name = CASE
+				WHEN auth_users.user_id IS NULL THEN EXCLUDED.name
+				ELSE auth_users.name
+			END,
 			picture_url = EXCLUDED.picture_url,
 			email_verified = EXCLUDED.email_verified,
 			updated_at = now()
-		RETURNING id, google_sub, COALESCE(email, ''), COALESCE(name, ''), COALESCE(picture_url, ''), email_verified
+		RETURNING id, google_sub, COALESCE(user_id, ''), COALESCE(email, ''),
+			COALESCE(name, ''), COALESCE(picture_url, ''), COALESCE(profile_image, ''),
+			COALESCE(bio, ''), email_verified
 	`, payload.Subject, email, name, pictureURL, emailVerified).Scan(
 		&user.ID,
 		&user.GoogleSub,
+		&user.UserID,
 		&user.Email,
 		&user.Name,
 		&user.PictureURL,
+		&user.ProfileImage,
+		&user.Bio,
 		&user.EmailVerified,
 	)
 	return user, err
@@ -333,6 +354,7 @@ func ensureAuthProfileSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `
 		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS user_id TEXT;
 		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS profile_image TEXT;
+		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS bio TEXT;
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_user_id ON auth_users (user_id) WHERE user_id IS NOT NULL;
 	`)
 	return err
@@ -340,7 +362,7 @@ func ensureAuthProfileSchema(ctx context.Context, pool *pgxpool.Pool) error {
 
 func handleAuthProfile(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost && r.Method != http.MethodPut {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
@@ -348,24 +370,6 @@ func handleAuthProfile(pool *pgxpool.Pool) http.HandlerFunc {
 		claims, err := claimsFromAuthorization(r)
 		if err != nil {
 			writeJSONError(w, http.StatusUnauthorized, err.Error())
-			return
-		}
-
-		var req profileRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-
-		req.UserID = strings.TrimSpace(req.UserID)
-		req.UserName = strings.TrimSpace(req.UserName)
-		req.ProfileImage = strings.TrimSpace(req.ProfileImage)
-		if req.UserID == "" || req.UserName == "" {
-			writeJSONError(w, http.StatusBadRequest, "userId and userName are required")
-			return
-		}
-		if !isUserID(req.UserID) {
-			writeJSONError(w, http.StatusBadRequest, "userId must be alphanumeric")
 			return
 		}
 
@@ -378,30 +382,124 @@ func handleAuthProfile(pool *pgxpool.Pool) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 
+		if r.Method == http.MethodGet {
+			user, err := selectAuthUser(ctx, pool, userNo)
+			if err != nil {
+				log.Printf("auth profile read error: %v", err)
+				writeJSONError(w, http.StatusInternalServerError, "failed to read profile")
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"user": user})
+			return
+		}
+
+		var req profileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+
+		req.UserID = strings.TrimSpace(req.UserID)
+		req.UserName = strings.TrimSpace(req.UserName)
+		req.ProfileImage = strings.TrimSpace(req.ProfileImage)
+		req.Bio = strings.TrimSpace(req.Bio)
+		if req.UserID == "" || req.UserName == "" {
+			writeJSONError(w, http.StatusBadRequest, "userId and userName are required")
+			return
+		}
+		if !isUserID(req.UserID) {
+			writeJSONError(w, http.StatusBadRequest, "userId must be alphanumeric")
+			return
+		}
+
 		var user authUser
 		err = pool.QueryRow(ctx, `
 			UPDATE auth_users
 			SET user_id = $1,
 				name = $2,
 				profile_image = NULLIF($3, ''),
+				bio = NULLIF($4, ''),
 				updated_at = now()
-			WHERE id = $4
-			RETURNING id, google_sub, COALESCE(email, ''), COALESCE(name, ''), COALESCE(picture_url, ''), email_verified
-		`, req.UserID, req.UserName, req.ProfileImage, userNo).Scan(
+			WHERE id = $5
+			RETURNING id, google_sub, COALESCE(user_id, ''), COALESCE(email, ''),
+				COALESCE(name, ''), COALESCE(picture_url, ''), COALESCE(profile_image, ''),
+				COALESCE(bio, ''), email_verified
+		`, req.UserID, req.UserName, req.ProfileImage, req.Bio, userNo).Scan(
 			&user.ID,
 			&user.GoogleSub,
+			&user.UserID,
 			&user.Email,
 			&user.Name,
 			&user.PictureURL,
+			&user.ProfileImage,
+			&user.Bio,
 			&user.EmailVerified,
 		)
 		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				writeJSONError(w, http.StatusConflict, "userId is already in use")
+				return
+			}
 			log.Printf("auth profile update error: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, "failed to save profile")
 			return
 		}
 
 		writeJSON(w, http.StatusOK, map[string]any{"user": user})
+	}
+}
+
+func selectAuthUser(ctx context.Context, pool *pgxpool.Pool, userNo int64) (authUser, error) {
+	var user authUser
+	err := pool.QueryRow(ctx, `
+		SELECT id, google_sub, COALESCE(user_id, ''), COALESCE(email, ''),
+			COALESCE(name, ''), COALESCE(picture_url, ''), COALESCE(profile_image, ''),
+			COALESCE(bio, ''), email_verified
+		FROM auth_users
+		WHERE id = $1
+	`, userNo).Scan(
+		&user.ID,
+		&user.GoogleSub,
+		&user.UserID,
+		&user.Email,
+		&user.Name,
+		&user.PictureURL,
+		&user.ProfileImage,
+		&user.Bio,
+		&user.EmailVerified,
+	)
+	return user, err
+}
+
+func handlePublicProfile(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		userID := strings.TrimSpace(r.URL.Query().Get("userId"))
+		if userID == "" || !isUserID(userID) {
+			writeJSONError(w, http.StatusBadRequest, "valid userId is required")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		var profile publicProfile
+		err := pool.QueryRow(ctx, `
+			SELECT user_id, COALESCE(name, ''), COALESCE(profile_image, '')
+			FROM auth_users
+			WHERE user_id = $1
+		`, userID).Scan(&profile.UserID, &profile.Name, &profile.ProfileImage)
+		if err != nil {
+			writeJSONError(w, http.StatusNotFound, "profile not found")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{"profile": profile})
 	}
 }
 

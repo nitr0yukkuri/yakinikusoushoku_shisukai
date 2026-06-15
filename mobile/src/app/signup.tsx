@@ -8,23 +8,39 @@ import {
   KeyboardAvoidingView, 
   Platform,
   ScrollView,
-  Image
+  Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+import { useProfile } from '../contexts/profile-context';
+import { getPersistableProfileImage } from '../utils/profile-image';
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const [userId, setUserId] = useState('');
+  const { profile, avatarUrl, saveProfile } = useProfile();
+  const [userId, setUserId] = useState(profile?.userId || '');
   const [userIdError, setUserIdError] = useState(''); 
-  const [userName, setUserName] = useState('');
-  const [iconUri, setIconUri] = useState<string | null>(null);
+  const [userName, setUserName] = useState(profile?.name || '');
+  const [iconUri, setIconUri] = useState<string | null>(avatarUrl);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSignUp = async () => {
-    setIsSubmitting(true);
-    router.replace('/home');
+    try {
+      setIsSubmitting(true);
+      await saveProfile({
+        userId,
+        userName,
+        profileImage: iconUri || '',
+        bio: profile?.bio || '',
+      });
+      router.replace('/home');
+    } catch (error) {
+      Alert.alert('エラー', error instanceof Error ? error.message : 'プロフィールの保存に失敗しました。');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handlePickImage = async () => {
@@ -34,10 +50,11 @@ export default function SignUpScreen() {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.5,
+        base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setIconUri(result.assets[0].uri);
+        setIconUri(getPersistableProfileImage(result.assets[0]));
       }
     } catch (error) {
       console.error("画像選択エラー:", error);
