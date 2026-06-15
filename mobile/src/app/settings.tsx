@@ -5,6 +5,8 @@ import { useRouter } from 'expo-router';
 import { AppMap } from '../components/AppMap';
 import { Footer } from '../components/Footer';
 import { Popup } from '../components/Popup';
+import { ProfileAvatar } from '../components/ProfileAvatar';
+import { useProfile } from '../contexts/profile-context';
 
 type SettingsPopup = 'system' | 'pastime' | null;
 
@@ -12,6 +14,7 @@ const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲー�
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { profile, avatarUrl, logout } = useProfile();
   const [activePopup, setActivePopup] = useState<SettingsPopup>(null);
   const [selectedPastimes, setSelectedPastimes] = useState<string[]>([]);
 
@@ -21,9 +24,19 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/');
+  };
+
   return (
     <View style={styles.container}>
-      <AppMap style={styles.map} />
+      <AppMap
+        style={styles.map}
+        userId={profile?.userId}
+        userName={profile?.name}
+        profileImage={avatarUrl || undefined}
+      />
 
       <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
         <View style={styles.contentWrapper} pointerEvents="box-none">
@@ -35,7 +48,12 @@ export default function SettingsScreen() {
             />
 
             <TouchableOpacity style={styles.iconContainer}>
-              <Ionicons name="person" size={26} color="#2330df" />
+              <ProfileAvatar
+                name={profile?.name}
+                profileImage={avatarUrl}
+                size={50}
+                style={styles.profileAvatar}
+              />
             </TouchableOpacity>
           </View>
 
@@ -84,12 +102,12 @@ export default function SettingsScreen() {
               <Text style={styles.popupLabel}>メールアドレスの変更</Text>
               <TextInput
                 style={styles.emailInput}
-                value="gaikenhoge@gmail.com"
+                value={profile?.email || ''}
                 editable={false}
               />
 
               <Text style={styles.deleteTitle}>アカウントを削除</Text>
-              <TouchableOpacity style={styles.deleteButton}>
+              <TouchableOpacity style={styles.deleteButton} onPress={handleLogout}>
                 <Ionicons name="trash-outline" size={18} color="#b71c1c" />
                 <Text style={styles.deleteButtonText}>削除する</Text>
               </TouchableOpacity>
@@ -169,10 +187,17 @@ const styles = StyleSheet.create({
   },
   iconContainer: {
     backgroundColor: '#ffffff',
-    padding: 12,
+    width: 54,
+    height: 54,
     borderRadius: 30,
     borderWidth: 2,
     borderColor: '#515151',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  profileAvatar: {
+    borderRadius: 25,
   },
   panel: {
     flex: 1,
