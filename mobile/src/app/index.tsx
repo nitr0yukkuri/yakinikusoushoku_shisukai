@@ -2,7 +2,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react'; // useMemoを削除
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View, Image, TouchableOpacity, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -22,8 +22,8 @@ type AuthResponse = {
   };
 };
 
-// ★ 変更点：3つのクライアントIDを環境変数から読み込む
-const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
+// ★修正箇所：.envの設定に合わせて EXPO_PUBLIC_GOOGLE_CLIENT_ID を読み込む
+const webClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
 const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
@@ -31,8 +31,6 @@ const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 export default function LoginScreen() {
   const router = useRouter();
 
-  // ★ 変更点：リダイレクトURIの強制生成を削除し、Expoの自動判定に任せる
-  // ★ 変更点：3つのIDを渡しつつ、既存のバックエンド連携を活かすため useIdTokenAuthRequest を維持
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId: webClientId,
     iosClientId: iosClientId,

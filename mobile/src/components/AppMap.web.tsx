@@ -36,7 +36,7 @@ const loadGoogleMapsScript = () => {
 
     const script = document.createElement('script');
     script.id = GOOGLE_MAPS_SCRIPT_ID;
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&loading=async`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}`;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
@@ -111,6 +111,7 @@ export const AppMap = ({
     const initMapAndLocation = async () => {
       try {
         await loadGoogleMapsScript();
+        console.log('mapElementRef', mapElementRef.current);
 
         if (!isMounted || !mapElementRef.current) return;
 
