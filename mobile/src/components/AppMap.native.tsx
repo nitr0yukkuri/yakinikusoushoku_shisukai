@@ -30,7 +30,6 @@ export const AppMap = ({
   roomId = 'global',
   userId: propUserId
 }: AppMapProps) => {
-  // ★ 解決策：userIdを毎回生成するのではなく、マウント時に1回だけ生成して保持する
   const [userId] = useState(() => propUserId || `user_${Math.floor(Math.random() * 10000)}`);
 
   const [locations, setLocations] = useState<Record<string, UserLocation>>({});
@@ -81,18 +80,18 @@ export const AppMap = ({
     let locationSubscription: Location.LocationSubscription | null = null;
 
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          "位置情報がオフになっています",
-          "相手と現在地を共有するには、スマートフォンの「設定」から位置情報を許可してください。",
-          [{ text: "OK" }]
-        );
-        setIsInitialized(true);
-        return;
-      }
-
       try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            "位置情報がオフになっています",
+            "相手と現在地を共有するには、スマートフォンの「設定」から位置情報を許可してください。",
+            [{ text: "OK" }]
+          );
+          setIsInitialized(true);
+          return;
+        }
+
         const initialLocation = await Promise.race([
           Location.getCurrentPositionAsync({}),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
@@ -104,26 +103,30 @@ export const AppMap = ({
         setIsInitialized(true);
       }
 
-      locationSubscription = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          distanceInterval: 10,
-          timeInterval: 5000,
-        },
-        (location) => {
-          setMyLocation(location);
+      try {
+        locationSubscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 10,
+            timeInterval: 5000,
+          },
+          (location) => {
+            setMyLocation(location);
 
-          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({
-              type: 'LOCATION_UPDATE',
-              userId: userId,
-              lat: location.coords.latitude,
-              lng: location.coords.longitude,
-              timestamp: location.timestamp,
-            }));
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                type: 'LOCATION_UPDATE',
+                userId: userId,
+                lat: location.coords.latitude,
+                lng: location.coords.longitude,
+                timestamp: location.timestamp,
+              }));
+            }
           }
-        }
-      );
+        );
+      } catch (error) {
+        console.warn('Failed to start watching position:', error);
+      }
     })();
 
     return () => {
