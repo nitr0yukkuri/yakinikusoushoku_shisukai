@@ -35,6 +35,12 @@
             "imageWidth": 76
           }
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "待ち合わせ相手と現在地を共有するために位置情報を利用します。"
+        }
       ]
     ],
     "experiments": {

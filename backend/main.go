@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -55,6 +56,108 @@ type appTokenClaims struct {
 	Exp       float64 `json:"exp"`
 }
 
+// ====== WebSocket Hub の実装 ======
+type wsClient struct {
+	hub  *wsHub
+	conn *websocket.Conn
+	room string
+	send chan []byte
+}
+
+type wsHub struct {
+	rooms      map[string]map[*wsClient]bool
+	broadcast  chan broadcastMessage
+	register   chan *wsClient
+	unregister chan *wsClient
+	mu         sync.Mutex
+}
+
+type broadcastMessage struct {
+	room string
+	data []byte
+}
+
+func newWsHub() *wsHub {
+	return &wsHub{
+		rooms:      make(map[string]map[*wsClient]bool),
+		broadcast:  make(chan broadcastMessage),
+		register:   make(chan *wsClient),
+		unregister: make(chan *wsClient),
+	}
+}
+
+func (h *wsHub) run() {
+	for {
+		select {
+		case client := <-h.register:
+			h.mu.Lock()
+			if h.rooms[client.room] == nil {
+				h.rooms[client.room] = make(map[*wsClient]bool)
+			}
+			h.rooms[client.room][client] = true
+			h.mu.Unlock()
+		case client := <-h.unregister:
+			h.mu.Lock()
+			if roomClients, ok := h.rooms[client.room]; ok {
+				if _, ok := roomClients[client]; ok {
+					delete(roomClients, client)
+					close(client.send)
+					if len(roomClients) == 0 {
+						delete(h.rooms, client.room)
+					}
+				}
+			}
+			h.mu.Unlock()
+		case message := <-h.broadcast:
+			h.mu.Lock()
+			if roomClients, ok := h.rooms[message.room]; ok {
+				for client := range roomClients {
+					select {
+					case client.send <- message.data:
+					default:
+						close(client.send)
+						delete(roomClients, client)
+					}
+				}
+			}
+			h.mu.Unlock()
+		}
+	}
+}
+
+func (c *wsClient) readPump(pool *pgxpool.Pool, ctx context.Context) {
+	defer func() {
+		c.hub.unregister <- c
+		c.conn.Close()
+	}()
+	for {
+		_, message, err := c.conn.ReadMessage()
+		if err != nil {
+			break
+		}
+		
+		c.hub.broadcast <- broadcastMessage{room: c.room, data: message}
+
+		go func(msg string) {
+			_, _ = pool.Exec(ctx, "INSERT INTO messages (content) VALUES ($1)", msg)
+		}(string(message))
+	}
+}
+
+func (c *wsClient) writePump() {
+	defer c.conn.Close()
+	for message := range c.send {
+		w, err := c.conn.NextWriter(websocket.TextMessage)
+		if err != nil {
+			return
+		}
+		w.Write(message)
+		w.Close()
+	}
+}
+// ====== WebSocket Hub の実装ここまで ======
+
+
 func main() {
 	_ = godotenv.Load("../.env")
 
@@ -70,7 +173,6 @@ func main() {
 	}
 	defer pool.Close()
 
-	// simple ping
 	ctxPing, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := pool.Ping(ctxPing); err != nil {
@@ -82,6 +184,10 @@ func main() {
 		log.Fatalf("auth profile schema failed: %v", err)
 	}
 
+	// Hubの起動
+	hub := newWsHub()
+	go hub.run()
+
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		w.Write([]byte("ok"))
@@ -91,32 +197,27 @@ func main() {
 	http.HandleFunc("/auth/profile", withCORS(handleAuthProfile(pool)))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		room := r.URL.Query().Get("room")
+		if room == "" {
+			room = "global"
+		}
+
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Printf("upgrade error: %v", err)
 			return
 		}
-		defer conn.Close()
 
-		for {
-			mt, msg, err := conn.ReadMessage()
-			if err != nil {
-				log.Printf("read error: %v", err)
-				break
-			}
-
-			// store message to DB (simple example)
-			_, err = pool.Exec(ctx, "INSERT INTO messages (content) VALUES ($1)", string(msg))
-			if err != nil {
-				log.Printf("db insert error: %v", err)
-			}
-
-			// echo back
-			if err := conn.WriteMessage(mt, msg); err != nil {
-				log.Printf("write error: %v", err)
-				break
-			}
+		client := &wsClient{
+			hub:  hub,
+			conn: conn,
+			room: room,
+			send: make(chan []byte, 256),
 		}
+		client.hub.register <- client
+
+		go client.writePump()
+		go client.readPump(pool, ctx)
 	})
 
 	port := os.Getenv("PORT")
