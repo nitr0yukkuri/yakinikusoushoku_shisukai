@@ -4,22 +4,26 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Image,
   StyleSheet,
   Alert,
   ScrollView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { ProfileAvatar } from './ProfileAvatar';
+import { useProfile } from '../contexts/profile-context';
+import { getPersistableProfileImage } from '../utils/profile-image';
 
 interface ProfileEditSectionProps {
   onSaveSuccess: () => void; // 保存が成功したときにポップアップを閉じるための関数
 }
 
 export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSectionProps) {
-  const [name, setName] = useState<string>('現在のユーザー名');
+  const { profile, avatarUrl, saveProfile } = useProfile();
+  const [name, setName] = useState<string>(profile?.name || '');
   // ★自己紹介用の状態（初期値）を追加
-  const [bio, setBio] = useState<string>('よろしくお願いします！');
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [bio, setBio] = useState<string>(profile?.bio || '');
+  const [imageUri, setImageUri] = useState<string | null>(avatarUrl);
+  const [isSaving, setIsSaving] = useState(false);
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -33,10 +37,11 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
+      base64: true,
     });
 
     if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
+      setImageUri(getPersistableProfileImage(result.assets[0]));
     }
   };
 
@@ -47,13 +52,26 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
     }
 
     try {
-      // TODO: バックエンドAPIに送る際は name, bio, imageUri を送信します
-      console.log('保存データ:', { name, bio, imageUri });
+      if (!profile?.userId) {
+        throw new Error('プロフィール登録が完了していません。');
+      }
 
+      setIsSaving(true);
+      await saveProfile({
+        userId: profile.userId,
+        userName: name,
+        profileImage: imageUri || '',
+        bio,
+      });
       Alert.alert('成功', 'プロフィールを更新しました。');
-      onSaveSuccess(); // ポップアップを閉じる
+      onSaveSuccess();
     } catch (error) {
-      Alert.alert('エラー', 'プロフィールの更新に失敗しました。');
+      Alert.alert(
+        'エラー',
+        error instanceof Error ? error.message : 'プロフィールの更新に失敗しました。',
+      );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -68,13 +86,12 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
 
       {/* アイコン画像 */}
       <TouchableOpacity onPress={pickImage} style={styles.avatarButton}>
-        {imageUri ? (
-          <Image source={{ uri: imageUri }} style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarPlaceholderText}>変更</Text>
-          </View>
-        )}
+        <ProfileAvatar
+          name={name}
+          profileImage={imageUri}
+          size={98}
+          style={styles.avatar}
+        />
       </TouchableOpacity>
 
       {/* 名前入力 */}
@@ -106,7 +123,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       </View>
 
       {/* 保存ボタン */}
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
+      <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={isSaving}>
         <Text style={styles.saveButtonText}>保存する</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -140,20 +157,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   avatar: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#e1e1e1',
-  },
-  avatarPlaceholderText: {
-    color: '#666',
-    fontSize: 14,
-    fontWeight: 'bold',
+    borderRadius: 49,
   },
   inputContainer: {
     width: '100%',

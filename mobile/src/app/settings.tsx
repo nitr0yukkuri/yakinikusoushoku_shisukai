@@ -1,58 +1,32 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-  Image,
-  TextInput,
-} from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, TextInput, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-
 import { AppMap } from '../components/AppMap';
-import { CalendarView } from '../components/CalendarView';
 import { Footer } from '../components/Footer';
 import { Popup } from '../components/Popup';
-import ProfileEditSection from '../components/ProfileEditSection';
 import { ProfileAvatar } from '../components/ProfileAvatar';
-import SettingsPanel from '../components/SettingsPanel';
 import { useProfile } from '../contexts/profile-context';
+
+type SettingsPopup = 'system' | 'pastime' | null;
 
 const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲーム', 'ジム'];
 
-export default function HomeScreen() {
+export default function SettingsScreen() {
   const router = useRouter();
   const { profile, avatarUrl, logout } = useProfile();
-
-  const [isPopupVisible, setPopupVisible] = useState(false);
-  const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
-  const [isSettingsVisible, setSettingsVisible] = useState(false);
-  const [isSystemVisible, setSystemVisible] = useState(false);
-  const [isPastimeVisible, setPastimeVisible] = useState(false);
-  const [isCalendarPopupVisible, setCalendarPopupVisible] = useState(false);
-
+  const [activePopup, setActivePopup] = useState<SettingsPopup>(null);
   const [selectedPastimes, setSelectedPastimes] = useState<string[]>([]);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [markedDates, setMarkedDates] = useState({});
 
   const togglePastime = (option: string) => {
-    setSelectedPastimes((prev) =>
-      prev.includes(option) ? prev.filter((p) => p !== option) : [...prev, option],
+    setSelectedPastimes(prev => 
+      prev.includes(option) ? prev.filter(p => p !== option) : [...prev, option]
     );
   };
 
   const handleLogout = async () => {
     await logout();
     router.replace('/');
-  };
-
-  const handleDayPress = (day: any) => {
-    setSelectedDate(day.dateString);
-    setMarkedDates({
-      [day.dateString]: { selected: true, selectedColor: '#2330df' },
-    });
   };
 
   return (
@@ -73,11 +47,7 @@ export default function HomeScreen() {
               resizeMode="contain"
             />
 
-            <TouchableOpacity
-              style={styles.iconContainer}
-              onPress={() => setProfilePopupVisible(true)}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity style={styles.iconContainer}>
               <ProfileAvatar
                 name={profile?.name}
                 profileImage={avatarUrl}
@@ -87,65 +57,49 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.mainContent} pointerEvents="none" />
+          <View style={styles.panel}>
+            {/* ドラッグハンドル */}
+            <View style={styles.dragHandleWrapper}>
+              <View style={styles.dragHandle} />
+            </View>
 
-          <Popup
-            visible={isPopupVisible}
-            onClose={() => setPopupVisible(false)}
-            title="通知"
-            message="新着の通知はありません。"
-          />
+            {/* ヘッダー領域 */}
+            <View style={styles.headerContainer}>
+              <View style={styles.headerLeft}>
+                <Ionicons name="settings-outline" size={26} color="#515151" />
+              </View>
+              <Text style={styles.title}>設定</Text>
+              <View style={styles.headerRight}>
+                <TouchableOpacity onPress={() => router.replace('/home')} style={styles.closeXButton} activeOpacity={0.6}>
+                  <Ionicons name="close" size={28} color="#515151" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-          <Popup
-            visible={isProfilePopupVisible}
-            onClose={() => setProfilePopupVisible(false)}
-            title="プロフィール設定"
-            icon="person-outline"
-          >
-            <ProfileEditSection onSaveSuccess={() => setProfilePopupVisible(false)} />
-          </Popup>
+            <View style={styles.contentContainer}>
 
-          <Popup
-            visible={isCalendarPopupVisible}
-            onClose={() => setCalendarPopupVisible(false)}
-            title="日付を選択"
-          >
-            <CalendarView
-              selectedDate={selectedDate}
-              onDayPress={handleDayPress}
-              markedDates={markedDates}
-            />
-
-            <TouchableOpacity
-              style={styles.selectButton}
-              onPress={() => setCalendarPopupVisible(false)}
-            >
-              <Text style={styles.selectButtonText}>選択</Text>
+            <TouchableOpacity style={styles.settingRow} onPress={() => setActivePopup('system')}>
+              <Text style={styles.settingText}>システム設定</Text>
+              <Text style={styles.settingArrow}>＞</Text>
             </TouchableOpacity>
-          </Popup>
+
+            <TouchableOpacity style={styles.settingRow} onPress={() => setActivePopup('pastime')}>
+              <Text style={styles.settingText}>好きな暇つぶし</Text>
+              <Text style={styles.settingArrow}>＞</Text>
+            </TouchableOpacity>
+            </View>
+          </View>
 
           <Popup
-            visible={isSettingsVisible}
-            onClose={() => setSettingsVisible(false)}
-            title="設定"
-            icon="settings-outline"
-          >
-            <SettingsPanel
-              onOpenSystem={() => setSystemVisible(true)}
-              onOpenPastime={() => setPastimeVisible(true)}
-            />
-          </Popup>
-
-          <Popup
-            visible={isSystemVisible}
-            onClose={() => setSystemVisible(false)}
+            visible={activePopup === 'system'}
+            onClose={() => setActivePopup(null)}
             title="システム設定"
             icon="settings-outline"
             slideDirection="right"
             showBackButton
           >
             <View style={styles.popupBody}>
-              <Text style={styles.popupLabel}>メールアドレス</Text>
+              <Text style={styles.popupLabel}>メールアドレスの変更</Text>
               <TextInput
                 style={styles.emailInput}
                 value={profile?.email || ''}
@@ -161,8 +115,8 @@ export default function HomeScreen() {
           </Popup>
 
           <Popup
-            visible={isPastimeVisible}
-            onClose={() => setPastimeVisible(false)}
+            visible={activePopup === 'pastime'}
+            onClose={() => setActivePopup(null)}
             title="好きな暇つぶし"
             icon="cafe-outline"
             slideDirection="right"
@@ -171,23 +125,17 @@ export default function HomeScreen() {
             <View style={styles.chipGrid}>
               {pastimeOptions.map((option) => {
                 const isSelected = selectedPastimes.includes(option);
-
                 return (
-                  <TouchableOpacity
-                    key={option}
+                  <TouchableOpacity 
+                    key={option} 
                     style={styles.chip}
                     onPress={() => togglePastime(option)}
                     activeOpacity={0.7}
                   >
-                    {isSelected && (
-                      <Ionicons
-                        name="checkmark"
-                        size={16}
-                        color="#4d6048"
-                        style={styles.checkIcon}
-                      />
-                    )}
-                    <Text style={styles.chipText}>{option}</Text>
+                    {isSelected && <Ionicons name="checkmark" size={16} color="#4d6048" style={styles.checkIcon} />}
+                    <Text style={styles.chipText}>
+                      {option}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -196,11 +144,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.footerWrapper}>
-          <Footer
-            onPressNotification={() => setPopupVisible(true)}
-            onPressCalendar={() => setCalendarPopupVisible(true)}
-            onPressSettings={() => setSettingsVisible(true)}
-          />
+          <Footer />
         </View>
       </SafeAreaView>
     </View>
@@ -255,27 +199,52 @@ const styles = StyleSheet.create({
   profileAvatar: {
     borderRadius: 25,
   },
-  mainContent: {
+  panel: {
     flex: 1,
+    backgroundColor: '#e2fbe2',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    padding: 20,
+    paddingTop: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.15,
+        shadowRadius: 5,
+      },
+      android: { elevation: 10 },
+      web: { boxShadow: '0px -3px 6px rgba(0, 0, 0, 0.15)' as any },
+    }),
   },
-  selectButton: {
-    backgroundColor: '#2330df',
-    paddingVertical: 12,
-    width: '80%',
-    alignSelf: 'center',
-    borderRadius: 25,
-    marginTop: 10,
+  dragHandleWrapper: { alignItems: 'center', width: '100%', paddingBottom: 10 },
+  dragHandle: { width: 40, height: 5, backgroundColor: '#cccccc', borderRadius: 2.5 },
+  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: 45, paddingHorizontal: 4 },
+  headerLeft: { width: 40, alignItems: 'flex-start' },
+  headerRight: { width: 40, alignItems: 'flex-end' },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#333', textAlign: 'center', flex: 1 },
+  closeXButton: { padding: 4 },
+  contentContainer: { flex: 1, width: '100%', paddingTop: 16, paddingBottom: 20 },
+  settingRow: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
-  selectButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
+  settingText: {
+    fontSize: 15,
+    color: '#1f1f1f',
+  },
+  settingArrow: {
+    fontSize: 15,
+    color: '#666666',
   },
   popupBody: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 40,
   },
   popupLabel: {
     alignSelf: 'flex-start',
@@ -323,7 +292,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 10,
     paddingHorizontal: 6,
-    marginTop: 120,
   },
   chip: {
     width: '31%',

@@ -1,54 +1,41 @@
-import * as AuthSession from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
-// ★ useState を追加しています
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-// ★ Text を追加しています
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View, Image, TouchableOpacity, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// ★ ポップアップ用のコンポーネントを読み込み
 import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
+import { useProfile, UserProfile } from '../contexts/profile-context';
 
 WebBrowser.maybeCompleteAuthSession();
 
 type AuthResponse = {
   token: string;
-  user: {
-    id: number;
-    email: string;
-    name: string;
-    pictureUrl: string;
-    emailVerified: boolean;
-  };
+  user: UserProfile;
 };
 
-const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
-const googleAuthClientId = googleClientId || 'missing-google-client-id';
+// ★修正箇所：.envの設定に合わせて EXPO_PUBLIC_GOOGLE_CLIENT_ID を読み込む
+const webClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
+const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
+const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const redirectUri = useMemo(
-    () => AuthSession.makeRedirectUri({ scheme: 'frontend', path: 'auth' }),
-    []
-  );
+  const { profile, isHydrated, setSession } = useProfile();
+  const isOAuthLoginRef = useRef(false);
 
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
-    {
-      clientId: googleAuthClientId,
-      redirectUri,
-      webClientId: googleAuthClientId,
-      selectAccount: true,
-    },
-    { scheme: 'frontend', path: 'auth' }
-  );
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
+    webClientId: webClientId,
+    iosClientId: iosClientId,
+    androidClientId: androidClientId,
+    selectAccount: true,
+  });
 
-  const canLogin = Boolean(googleClientId && request);
+  const canLogin = Boolean(request);
 
-  // ★ 追加：ポップアップの表示・非表示を管理する状態
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const loginWithBackend = useCallback((idToken: string) => {
@@ -64,14 +51,17 @@ export default function LoginScreen() {
         }
         return body as AuthResponse;
       })
-      .then((body) => {
+      .then(async (body) => {
+        isOAuthLoginRef.current = true;
+        await setSession({ token: body.token, profile: body.user });
         console.log('Google Login Success:', body.user.email);
         router.replace('/signup');
       })
       .catch((error: Error) => {
+        isOAuthLoginRef.current = false;
         console.error('Google Login Failed:', error.message);
       });
-  }, [router]);
+  }, [router, setSession]);
 
   useEffect(() => {
     if (response?.type === 'success') {
@@ -80,6 +70,11 @@ export default function LoginScreen() {
     }
   }, [loginWithBackend, response]);
 
+  useEffect(() => {
+    if (!isHydrated || !profile || isOAuthLoginRef.current) return;
+    router.replace(profile.userId ? '/home' : '/signup');
+  }, [isHydrated, profile, router]);
+
   const handleGoogleLogin = () => {
     if (!canLogin) return;
     promptAsync();
@@ -87,38 +82,36 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* ★ 追加：画面右上に配置するプロフィールボタン */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.iconButton} 
-          onPress={() => setIsProfileOpen(true)} // ここを押すとポップアップが開く
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => setIsProfileOpen(true)}
           activeOpacity={0.7}
         >
-          <Text style={styles.iconText}>👤</Text> 
+          <Text style={styles.iconText}>👤</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.logoContainer}>
-        <Image 
-          source={require('../../assets/images/matsunya-logo.png')} 
+        <Image
+          source={require('../../assets/images/matsunya-logo.png')}
           style={styles.logoImage}
           resizeMode="contain"
-        /> 
+        />
       </View>
 
       <View style={styles.buttonContainer}>
         <TouchableOpacity onPress={handleGoogleLogin} activeOpacity={0.8}>
-          <Image 
-            source={require('../../assets/images/googleLoginButton.png')} 
+          <Image
+            source={require('../../assets/images/googleLoginButton.png')}
             style={styles.googleButtonImage}
             resizeMode="contain"
           />
         </TouchableOpacity>
       </View>
 
-      {/* ★ 追加：プロフィール設定用のポップアップ本体 */}
-      <Popup 
-        visible={isProfileOpen} 
+      <Popup
+        visible={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         title="プロフィール設定"
         icon="person-outline"
@@ -136,14 +129,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // ★ 追加：右上のボタンの配置用スタイル
   header: {
     position: 'absolute',
     top: 20,
     right: 20,
     zIndex: 10,
   },
-  // ★ 追加：右上のボタンの見た目
   iconButton: {
     width: 44,
     height: 44,
