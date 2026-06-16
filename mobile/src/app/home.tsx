@@ -19,6 +19,7 @@ import ProfileEditSection from '../components/ProfileEditSection';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
 import { useProfile } from '../contexts/profile-context';
+import { getProfileImageSignature } from '../utils/profile-image';
 
 const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲーム', 'ジム'];
 
@@ -79,6 +80,7 @@ export default function HomeScreen() {
               activeOpacity={0.7}
             >
               <ProfileAvatar
+                key={`${profile?.name ?? ''}:${getProfileImageSignature(avatarUrl)}`}
                 name={profile?.name}
                 profileImage={avatarUrl}
                 size={50}
@@ -102,7 +104,10 @@ export default function HomeScreen() {
             title="プロフィール設定"
             icon="person-outline"
           >
-            <ProfileEditSection onSaveSuccess={() => setProfilePopupVisible(false)} />
+            <ProfileEditSection
+              key={`${profile?.id ?? 'profile'}-${profile?.name ?? ''}-${profile?.bio ?? ''}-${getProfileImageSignature(avatarUrl)}`}
+              onSaveSuccess={() => setProfilePopupVisible(false)}
+            />
           </Popup>
 
           <Popup

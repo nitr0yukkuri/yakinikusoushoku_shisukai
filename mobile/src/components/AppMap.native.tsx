@@ -3,6 +3,7 @@ import { StyleProp, StyleSheet, ViewStyle, ActivityIndicator, View, Alert } from
 import MapView, { PROVIDER_GOOGLE, Region, Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { ProfileAvatar } from './ProfileAvatar';
+import { getProfileImageSignature } from '../utils/profile-image';
 
 const WS_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
@@ -46,7 +47,6 @@ export const AppMap = ({
 
   const [locations, setLocations] = useState<Record<string, UserLocation>>({});
   const [myLocation, setMyLocation] = useState<Location.LocationObject | null>(null);
-
   const [isInitialized, setIsInitialized] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -216,6 +216,9 @@ export const AppMap = ({
     );
   }
 
+  const selfMarkerId = `self-${userId}`;
+  const selfMarkerImageKey = `${userName}:${getProfileImageSignature(profileImage)}`;
+
   return (
     <MapView
       provider={PROVIDER_GOOGLE}
@@ -231,16 +234,18 @@ export const AppMap = ({
     >
       {myLocation && (
         <Marker
-          key={`self-${userId}-${userName}-${profileImage?.length || 0}-${profileImage?.slice(-16) || ''}`}
+          key={selfMarkerId}
+          identifier={selfMarkerId}
           coordinate={{
             latitude: myLocation.coords.latitude,
             longitude: myLocation.coords.longitude,
           }}
           title={userName}
-          tracksViewChanges={false}
+          tracksViewChanges={Boolean(profileImage)}
         >
           <View style={styles.markerBorder}>
             <ProfileAvatar
+              key={selfMarkerImageKey}
               name={userName}
               profileImage={profileImage}
               size={38}
@@ -249,23 +254,30 @@ export const AppMap = ({
           </View>
         </Marker>
       )}
-      {Object.values(locations).map((loc) => (
-        <Marker
-          key={`${loc.userId}-${loc.userName}-${loc.profileImage?.length || 0}-${loc.profileImage?.slice(-16) || ''}`}
-          coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
-          title={loc.userName}
-          tracksViewChanges={false}
-        >
-          <View style={styles.markerBorder}>
-            <ProfileAvatar
-              name={loc.userName}
-              profileImage={loc.profileImage}
-              size={38}
-              style={styles.avatar}
-            />
-          </View>
-        </Marker>
-      ))}
+      {Object.values(locations).map((loc) => {
+        const markerId = loc.userId;
+        const markerImageKey = `${loc.userName}:${getProfileImageSignature(loc.profileImage)}`;
+
+        return (
+          <Marker
+            key={markerId}
+            identifier={markerId}
+            coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
+            title={loc.userName}
+            tracksViewChanges={Boolean(loc.profileImage)}
+          >
+            <View style={styles.markerBorder}>
+              <ProfileAvatar
+                key={markerImageKey}
+                name={loc.userName}
+                profileImage={loc.profileImage}
+                size={38}
+                style={styles.avatar}
+              />
+            </View>
+          </Marker>
+        );
+      })}
     </MapView>
   );
 };

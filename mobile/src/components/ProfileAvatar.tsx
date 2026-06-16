@@ -13,6 +13,22 @@ type ProfileAvatarProps = {
 export function ProfileAvatar({ name, profileImage, size, style }: ProfileAvatarProps) {
   const [failedSource, setFailedSource] = useState<string | null>(null);
 
+  if (profileImage && failedSource === profileImage) {
+    return (
+      <View
+        style={[
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: 'transparent',
+          },
+          style,
+        ]}
+      />
+    );
+  }
+
   if (profileImage && failedSource !== profileImage) {
     return (
       <Image

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle, ActivityIndicator } from 'react-native';
 import { getAvatarInitials } from '../utils/avatar';
+import { getProfileImageSignature } from '../utils/profile-image';
 
 const INITIAL_REGION = { lat: 35.681236, lng: 139.767125 };
 const GOOGLE_MAPS_SCRIPT_ID = 'google-maps-javascript-api';
@@ -9,6 +10,8 @@ const WS_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
 let googleMapsScriptPromise: Promise<void> | null = null;
+const markerUrlCache = new Map<string, Promise<string>>();
+const markerIconVersions = new WeakMap<object, string>();
 
 type AppMapProps = {
   style?: StyleProp<ViewStyle>;
@@ -18,12 +21,7 @@ type AppMapProps = {
   profileImage?: string;
 };
 
-const circularMarkerUrl = (name: string, profileImage?: string, size = 48) => {
-  const source = (profileImage ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
+const fallbackMarkerUrl = (name: string, size = 48) => {
   const inset = 2;
   const diameter = size - inset * 2;
   const initials = getAvatarInitials(name)
@@ -31,26 +29,97 @@ const circularMarkerUrl = (name: string, profileImage?: string, size = 48) => {
     .replaceAll('"', '&quot;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
-  const avatar =
-    profileImage?.startsWith('data:image/') === true
-      ? `<image href="${source}" x="${inset}" y="${inset}" width="${diameter}" height="${diameter}"
-        preserveAspectRatio="xMidYMid slice" clip-path="url(#avatar)" />`
-      : `<circle cx="${size / 2}" cy="${size / 2}" r="${diameter / 2}" fill="#208AEF" />
-        <text x="${size / 2}" y="${size / 2}" text-anchor="middle" dominant-baseline="central"
-          fill="#ffffff" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.38)}"
-          font-weight="700">${initials}</text>`;
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <defs>
-        <clipPath id="avatar">
-          <circle cx="${size / 2}" cy="${size / 2}" r="${diameter / 2}" />
-        </clipPath>
-      </defs>
       <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="#ffffff" />
-      ${avatar}
+      <circle cx="${size / 2}" cy="${size / 2}" r="${diameter / 2}" fill="#208AEF" />
+      <text x="${size / 2}" y="${size / 2}" text-anchor="middle" dominant-baseline="central"
+        fill="#ffffff" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.38)}"
+        font-weight="700">${initials}</text>
     </svg>
   `;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+};
+
+const blankMarkerUrl = (size = 48) => {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="#ffffff" />
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+};
+
+const circularMarkerUrl = (name: string, profileImage?: string, size = 48) => {
+  if (!profileImage) {
+    return Promise.resolve(fallbackMarkerUrl(name, size));
+  }
+  if (profileImage.startsWith('data:image/') !== true || typeof document === 'undefined') {
+    return Promise.resolve(blankMarkerUrl(size));
+  }
+
+  const cacheKey = `${size}:${getProfileImageSignature(profileImage)}`;
+  const cached = markerUrlCache.get(cacheKey);
+  if (cached) return cached;
+
+  const promise = new Promise<string>((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        resolve(blankMarkerUrl(size));
+        return;
+      }
+
+      const inset = 2;
+      const diameter = size - inset * 2;
+      context.fillStyle = '#ffffff';
+      context.beginPath();
+      context.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+      context.fill();
+      context.save();
+      context.beginPath();
+      context.arc(size / 2, size / 2, diameter / 2, 0, Math.PI * 2);
+      context.clip();
+
+      const scale = Math.max(diameter / image.width, diameter / image.height);
+      const width = image.width * scale;
+      const height = image.height * scale;
+      const x = inset + (diameter - width) / 2;
+      const y = inset + (diameter - height) / 2;
+      context.drawImage(image, x, y, width, height);
+      context.restore();
+      resolve(canvas.toDataURL('image/png'));
+    };
+    image.onerror = () => resolve(blankMarkerUrl(size));
+    image.src = profileImage;
+  });
+
+  markerUrlCache.set(cacheKey, promise);
+  return promise;
+};
+
+const setMarkerIcon = (
+  browserWindow: any,
+  marker: any,
+  name: string,
+  profileImage?: string,
+  size = 48,
+) => {
+  const signature = `${name}:${size}:${getProfileImageSignature(profileImage)}`;
+  markerIconVersions.set(marker, signature);
+
+  circularMarkerUrl(name, profileImage, size).then((url) => {
+    if (markerIconVersions.get(marker) !== signature) return;
+    marker.setIcon({
+      url,
+      scaledSize: new browserWindow.google.maps.Size(size, size),
+      anchor: new browserWindow.google.maps.Point(size / 2, size / 2),
+    });
+  });
 };
 
 const loadGoogleMapsScript = () => {
@@ -116,11 +185,7 @@ export const AppMap = ({
     if (!myMarkerRef.current || !browserWindow.google?.maps) return;
 
     myMarkerRef.current.setTitle(userName);
-    myMarkerRef.current.setIcon({
-      url: circularMarkerUrl(userName, profileImage),
-      scaledSize: new browserWindow.google.maps.Size(48, 48),
-      anchor: new browserWindow.google.maps.Point(24, 24),
-    });
+    setMarkerIcon(browserWindow, myMarkerRef.current, userName, profileImage);
 
     if (wsRef.current?.readyState === WebSocket.OPEN && currentPositionRef.current) {
       wsRef.current.send(JSON.stringify({
@@ -157,12 +222,8 @@ export const AppMap = ({
               position,
               map: mapInstanceRef.current,
               title: markerName,
-              icon: {
-                url: circularMarkerUrl(markerName, data.profileImage, 40),
-                scaledSize: new browserWindow.google.maps.Size(40, 40),
-                anchor: new browserWindow.google.maps.Point(20, 20),
-              }
             });
+            setMarkerIcon(browserWindow, otherMarkersRef.current[data.userId], markerName, data.profileImage, 40);
           }
 
           if (markerProfileVersionsRef.current[data.userId] !== profileVersion) {
@@ -176,11 +237,7 @@ export const AppMap = ({
                 const marker = otherMarkersRef.current[data.userId];
                 if (!marker) return;
                 marker.setTitle(profile.name || data.userId);
-                marker.setIcon({
-                  url: circularMarkerUrl(profile.name || data.userId, profile.profileImage, 40),
-                  scaledSize: new browserWindow.google.maps.Size(40, 40),
-                  anchor: new browserWindow.google.maps.Point(20, 20),
-                });
+                setMarkerIcon(browserWindow, marker, profile.name || data.userId, profile.profileImage, 40);
               })
               .catch((error) => {
                 delete markerProfileVersionsRef.current[data.userId];
@@ -244,12 +301,13 @@ export const AppMap = ({
               position: currentPos,
               map: mapInstanceRef.current,
               title: profileRef.current.userName,
-              icon: {
-                url: circularMarkerUrl(profileRef.current.userName, profileRef.current.profileImage),
-                scaledSize: new browserWindow.google.maps.Size(48, 48),
-                anchor: new browserWindow.google.maps.Point(24, 24),
-              }
             });
+            setMarkerIcon(
+              browserWindow,
+              myMarkerRef.current,
+              profileRef.current.userName,
+              profileRef.current.profileImage,
+            );
 
             setIsInitialized(true);
 

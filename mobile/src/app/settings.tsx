@@ -7,6 +7,7 @@ import { Footer } from '../components/Footer';
 import { Popup } from '../components/Popup';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { useProfile } from '../contexts/profile-context';
+import { getProfileImageSignature } from '../utils/profile-image';
 
 type SettingsPopup = 'system' | 'pastime' | null;
 
@@ -49,6 +50,7 @@ export default function SettingsScreen() {
 
             <TouchableOpacity style={styles.iconContainer}>
               <ProfileAvatar
+                key={`${profile?.name ?? ''}:${getProfileImageSignature(avatarUrl)}`}
                 name={profile?.name}
                 profileImage={avatarUrl}
                 size={50}

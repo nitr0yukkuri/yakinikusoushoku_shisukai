@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { ProfileAvatar } from './ProfileAvatar';
 import { useProfile } from '../contexts/profile-context';
-import { getPersistableProfileImage } from '../utils/profile-image';
+import { getPersistableProfileImage, getProfileImageSignature } from '../utils/profile-image';
 
 interface ProfileEditSectionProps {
   onSaveSuccess: () => void; // 保存が成功したときにポップアップを閉じるための関数
@@ -23,6 +23,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
   // ★自己紹介用の状態（初期値）を追加
   const [bio, setBio] = useState<string>(profile?.bio || '');
   const [imageUri, setImageUri] = useState<string | null>(avatarUrl);
+  const imageUriRef = useRef<string | null>(avatarUrl);
   const [isSaving, setIsSaving] = useState(false);
 
   const pickImage = async () => {
@@ -40,8 +41,14 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       base64: true,
     });
 
-    if (!result.canceled) {
-      setImageUri(getPersistableProfileImage(result.assets[0]));
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const nextImage = getPersistableProfileImage(result.assets[0]);
+      if (!nextImage) {
+        Alert.alert('エラー', 'この環境では選択した画像を保存できませんでした。別の画像を選んでください。');
+        return;
+      }
+      imageUriRef.current = nextImage;
+      setImageUri(nextImage);
     }
   };
 
@@ -60,7 +67,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       await saveProfile({
         userId: profile.userId,
         userName: name,
-        profileImage: imageUri || '',
+        profileImage: imageUriRef.current ?? imageUri ?? avatarUrl ?? profile.profileImage ?? '',
         bio,
       });
       Alert.alert('成功', 'プロフィールを更新しました。');
@@ -87,6 +94,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       {/* アイコン画像 */}
       <TouchableOpacity onPress={pickImage} style={styles.avatarButton}>
         <ProfileAvatar
+          key={`${name}:${getProfileImageSignature(imageUri)}`}
           name={name}
           profileImage={imageUri}
           size={98}
