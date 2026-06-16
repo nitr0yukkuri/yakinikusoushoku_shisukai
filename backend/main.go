@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -78,6 +79,7 @@ type wsClient struct {
 
 type wsHub struct {
 	rooms      map[string]map[*wsClient]bool
+	arrivals   map[string]map[string]time.Time
 	broadcast  chan broadcastMessage
 	register   chan *wsClient
 	unregister chan *wsClient
@@ -89,9 +91,19 @@ type broadcastMessage struct {
 	data []byte
 }
 
+type arrivalTimeMessage struct {
+	Type             string `json:"type"`
+	UserID           string `json:"userId"`
+	Minutes          int64  `json:"minutes,omitempty"`
+	RemainingSeconds int64  `json:"remainingSeconds,omitempty"`
+	ArrivalAt        int64  `json:"arrivalAt,omitempty"`
+	Timestamp        int64  `json:"timestamp,omitempty"`
+}
+
 func newWsHub() *wsHub {
 	return &wsHub{
 		rooms:      make(map[string]map[*wsClient]bool),
+		arrivals:   make(map[string]map[string]time.Time),
 		broadcast:  make(chan broadcastMessage),
 		register:   make(chan *wsClient),
 		unregister: make(chan *wsClient),
@@ -102,12 +114,26 @@ func (h *wsHub) run() {
 	for {
 		select {
 		case client := <-h.register:
+			var snapshots [][]byte
 			h.mu.Lock()
 			if h.rooms[client.room] == nil {
 				h.rooms[client.room] = make(map[*wsClient]bool)
 			}
 			h.rooms[client.room][client] = true
+			for userID, arrivalAt := range h.arrivals[client.room] {
+				snapshots = append(snapshots, buildArrivalUpdate(userID, arrivalAt, time.Now()))
+			}
 			h.mu.Unlock()
+			for _, snapshot := range snapshots {
+				select {
+				case client.send <- snapshot:
+				default:
+					clientToUnregister := client
+					go func() {
+						h.unregister <- clientToUnregister
+					}()
+				}
+			}
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if roomClients, ok := h.rooms[client.room]; ok {
@@ -137,6 +163,110 @@ func (h *wsHub) run() {
 	}
 }
 
+func (h *wsHub) runArrivalTicker() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for now := range ticker.C {
+		var updates []broadcastMessage
+
+		h.mu.Lock()
+		for room, arrivals := range h.arrivals {
+			for userID, arrivalAt := range arrivals {
+				updates = append(updates, broadcastMessage{
+					room: room,
+					data: buildArrivalUpdate(userID, arrivalAt, now),
+				})
+				if !arrivalAt.After(now) {
+					delete(arrivals, userID)
+				}
+			}
+			if len(arrivals) == 0 {
+				delete(h.arrivals, room)
+			}
+		}
+		h.mu.Unlock()
+
+		for _, update := range updates {
+			h.broadcast <- update
+		}
+	}
+}
+
+func (h *wsHub) setArrival(room string, message arrivalTimeMessage) {
+	now := time.Now()
+	arrivalAt, ok := nextArrivalTime(message, now)
+	if !ok || strings.TrimSpace(message.UserID) == "" {
+		return
+	}
+
+	userID := strings.TrimSpace(message.UserID)
+	h.mu.Lock()
+	if h.arrivals[room] == nil {
+		h.arrivals[room] = make(map[string]time.Time)
+	}
+	h.arrivals[room][userID] = arrivalAt
+	h.mu.Unlock()
+
+	h.broadcast <- broadcastMessage{
+		room: room,
+		data: buildArrivalUpdate(userID, arrivalAt, now),
+	}
+}
+
+func (h *wsHub) clearArrival(room string, message arrivalTimeMessage) {
+	userID := strings.TrimSpace(message.UserID)
+	if userID == "" {
+		return
+	}
+
+	h.mu.Lock()
+	if arrivals := h.arrivals[room]; arrivals != nil {
+		delete(arrivals, userID)
+		if len(arrivals) == 0 {
+			delete(h.arrivals, room)
+		}
+	}
+	h.mu.Unlock()
+
+	h.broadcast <- broadcastMessage{
+		room: room,
+		data: buildArrivalUpdate(userID, time.Now(), time.Now()),
+	}
+}
+
+func nextArrivalTime(message arrivalTimeMessage, now time.Time) (time.Time, bool) {
+	switch {
+	case message.ArrivalAt > 0:
+		return time.UnixMilli(message.ArrivalAt), true
+	case message.RemainingSeconds > 0:
+		return now.Add(time.Duration(message.RemainingSeconds) * time.Second), true
+	case message.Minutes > 0:
+		return now.Add(time.Duration(message.Minutes) * time.Minute), true
+	default:
+		return time.Time{}, false
+	}
+}
+
+func buildArrivalUpdate(userID string, arrivalAt time.Time, now time.Time) []byte {
+	remainingSeconds := int64(math.Ceil(arrivalAt.Sub(now).Seconds()))
+	if remainingSeconds < 0 {
+		remainingSeconds = 0
+	}
+
+	body, err := json.Marshal(arrivalTimeMessage{
+		Type:             "ARRIVAL_TIME_UPDATE",
+		UserID:           userID,
+		ArrivalAt:        arrivalAt.UnixMilli(),
+		RemainingSeconds: remainingSeconds,
+		Timestamp:        now.UnixMilli(),
+	})
+	if err != nil {
+		return []byte(`{"type":"ARRIVAL_TIME_UPDATE","remainingSeconds":0}`)
+	}
+	return body
+}
+
 func (c *wsClient) readPump(pool *pgxpool.Pool, ctx context.Context) {
 	defer func() {
 		c.hub.unregister <- c
@@ -146,6 +276,18 @@ func (c *wsClient) readPump(pool *pgxpool.Pool, ctx context.Context) {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			break
+		}
+
+		var arrivalMessage arrivalTimeMessage
+		if err := json.Unmarshal(message, &arrivalMessage); err == nil {
+			switch arrivalMessage.Type {
+			case "ARRIVAL_TIME_SET":
+				c.hub.setArrival(c.room, arrivalMessage)
+				continue
+			case "ARRIVAL_TIME_CLEAR":
+				c.hub.clearArrival(c.room, arrivalMessage)
+				continue
+			}
 		}
 
 		c.hub.broadcast <- broadcastMessage{room: c.room, data: message}
@@ -167,8 +309,8 @@ func (c *wsClient) writePump() {
 		w.Close()
 	}
 }
-// ====== WebSocket Hub の実装ここまで ======
 
+// ====== WebSocket Hub の実装ここまで ======
 
 func main() {
 	_ = godotenv.Load("../.env")
@@ -199,6 +341,7 @@ func main() {
 	// Hubの起動
 	hub := newWsHub()
 	go hub.run()
+	go hub.runArrivalTicker()
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
