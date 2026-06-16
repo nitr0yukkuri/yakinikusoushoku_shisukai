@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 const SESSION_STORAGE_KEY = 'matsunya.session';
 
+
 export type UserProfile = {
   id: number;
   googleSub: string;
