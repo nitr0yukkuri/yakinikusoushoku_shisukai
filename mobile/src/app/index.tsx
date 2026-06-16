@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
 import { useProfile, UserProfile } from '../contexts/profile-context';
+import { getProfileImageSignature } from '../utils/profile-image';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -55,7 +56,7 @@ export default function LoginScreen() {
         isOAuthLoginRef.current = true;
         await setSession({ token: body.token, profile: body.user });
         console.log('Google Login Success:', body.user.email);
-        router.replace('/signup');
+        router.replace(body.user.userId ? '/home' : '/signup');
       })
       .catch((error: Error) => {
         isOAuthLoginRef.current = false;
@@ -116,7 +117,10 @@ export default function LoginScreen() {
         title="プロフィール設定"
         icon="person-outline"
       >
-        <ProfileEditSection onSaveSuccess={() => setIsProfileOpen(false)} />
+        <ProfileEditSection
+          key={`${profile?.id ?? 'profile'}-${profile?.name ?? ''}-${profile?.bio ?? ''}-${getProfileImageSignature(profile?.profileImage)}`}
+          onSaveSuccess={() => setIsProfileOpen(false)}
+        />
       </Popup>
     </SafeAreaView>
   );

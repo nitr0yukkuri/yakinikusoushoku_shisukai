@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -24,6 +24,7 @@ export default function SignUpScreen() {
   const [userIdError, setUserIdError] = useState(''); 
   const [userName, setUserName] = useState(profile?.name || '');
   const [iconUri, setIconUri] = useState<string | null>(avatarUrl);
+  const iconUriRef = useRef<string | null>(avatarUrl);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSignUp = async () => {
@@ -32,7 +33,7 @@ export default function SignUpScreen() {
       await saveProfile({
         userId,
         userName,
-        profileImage: iconUri || '',
+        profileImage: iconUriRef.current ?? iconUri ?? avatarUrl ?? profile?.profileImage ?? '',
         bio: profile?.bio || '',
       });
       router.replace('/home');
@@ -54,7 +55,13 @@ export default function SignUpScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setIconUri(getPersistableProfileImage(result.assets[0]));
+        const nextImage = getPersistableProfileImage(result.assets[0]);
+        if (!nextImage) {
+          Alert.alert('エラー', 'この環境では選択した画像を保存できませんでした。別の画像を選んでください。');
+          return;
+        }
+        iconUriRef.current = nextImage;
+        setIconUri(nextImage);
       }
     } catch (error) {
       console.error("画像選択エラー:", error);

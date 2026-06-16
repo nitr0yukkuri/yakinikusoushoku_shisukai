@@ -122,6 +122,9 @@ export function ProfileProvider({ children }: React.PropsWithChildren) {
       body: JSON.stringify(input),
     });
     const savedProfile = await readResponse(response);
+    if ((savedProfile.profileImage || '') !== (input.profileImage || '')) {
+      throw new Error('プロフィール画像を保存できませんでした。もう一度お試しください。');
+    }
     await persistSession(token, savedProfile);
     return savedProfile;
   }, [persistSession, token]);

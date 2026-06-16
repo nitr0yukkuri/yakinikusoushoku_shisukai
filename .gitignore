@@ -5,3 +5,5 @@ dist
 .DS_Store
 .codex-tmp/
 .gocache/
+.gradle-home/
+.npm-cache/
