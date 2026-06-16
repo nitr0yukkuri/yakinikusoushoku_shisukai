@@ -133,6 +133,8 @@ go mod tidy
 # DBマイグレーション
 psql $DATABASE_URL -f migrations/0001_init.sql
 
+psql 'postgresql://neondb_owner:npg_PBj0Zi1dEaLQ@ep-odd-field-aqcp88vp-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require' -f migrations/0001_init.sql
+
 # サーバー起動
 go run main.go
 ```

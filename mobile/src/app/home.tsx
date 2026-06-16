@@ -1,8 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, TextInput } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  SafeAreaView,
+  Image,
+  TextInput,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+
 import { AppMap } from '../components/AppMap';
+import { CalendarView } from '../components/CalendarView';
 import { Footer } from '../components/Footer';
 import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
@@ -15,28 +25,34 @@ const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲー�
 export default function HomeScreen() {
   const router = useRouter();
   const { profile, avatarUrl, logout } = useProfile();
-  // 通知用のポップアップ状態
+
   const [isPopupVisible, setPopupVisible] = useState(false);
-  // プロフィール用のポップアップ状態
   const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
-  // 設定用のポップアップ状態
   const [isSettingsVisible, setSettingsVisible] = useState(false);
-  // システム設定用のポップアップ状態
   const [isSystemVisible, setSystemVisible] = useState(false);
-  // 好きな暇つぶし用のポップアップ状態
   const [isPastimeVisible, setPastimeVisible] = useState(false);
-  // 暇つぶし選択状態
+  const [isCalendarPopupVisible, setCalendarPopupVisible] = useState(false);
+
   const [selectedPastimes, setSelectedPastimes] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [markedDates, setMarkedDates] = useState({});
 
   const togglePastime = (option: string) => {
-    setSelectedPastimes(prev =>
-      prev.includes(option) ? prev.filter(p => p !== option) : [...prev, option]
+    setSelectedPastimes((prev) =>
+      prev.includes(option) ? prev.filter((p) => p !== option) : [...prev, option],
     );
   };
 
   const handleLogout = async () => {
     await logout();
     router.replace('/');
+  };
+
+  const handleDayPress = (day: any) => {
+    setSelectedDate(day.dateString);
+    setMarkedDates({
+      [day.dateString]: { selected: true, selectedColor: '#2330df' },
+    });
   };
 
   return (
@@ -73,7 +89,6 @@ export default function HomeScreen() {
 
           <View style={styles.mainContent} pointerEvents="none" />
 
-          {/* 通知用のポップアップ */}
           <Popup
             visible={isPopupVisible}
             onClose={() => setPopupVisible(false)}
@@ -81,7 +96,6 @@ export default function HomeScreen() {
             message="新着の通知はありません。"
           />
 
-          {/* プロフィール設定用のポップアップ */}
           <Popup
             visible={isProfilePopupVisible}
             onClose={() => setProfilePopupVisible(false)}
@@ -91,7 +105,25 @@ export default function HomeScreen() {
             <ProfileEditSection onSaveSuccess={() => setProfilePopupVisible(false)} />
           </Popup>
 
-          {/* 設定用のポップアップ */}
+          <Popup
+            visible={isCalendarPopupVisible}
+            onClose={() => setCalendarPopupVisible(false)}
+            title="日付を選択"
+          >
+            <CalendarView
+              selectedDate={selectedDate}
+              onDayPress={handleDayPress}
+              markedDates={markedDates}
+            />
+
+            <TouchableOpacity
+              style={styles.selectButton}
+              onPress={() => setCalendarPopupVisible(false)}
+            >
+              <Text style={styles.selectButtonText}>選択</Text>
+            </TouchableOpacity>
+          </Popup>
+
           <Popup
             visible={isSettingsVisible}
             onClose={() => setSettingsVisible(false)}
@@ -104,7 +136,6 @@ export default function HomeScreen() {
             />
           </Popup>
 
-          {/* システム設定ポップアップ（設定の上に重ねる） */}
           <Popup
             visible={isSystemVisible}
             onClose={() => setSystemVisible(false)}
@@ -114,12 +145,13 @@ export default function HomeScreen() {
             showBackButton
           >
             <View style={styles.popupBody}>
-              <Text style={styles.popupLabel}>メールアドレスの変更</Text>
+              <Text style={styles.popupLabel}>メールアドレス</Text>
               <TextInput
                 style={styles.emailInput}
                 value={profile?.email || ''}
                 editable={false}
               />
+
               <Text style={styles.deleteTitle}>アカウントを削除</Text>
               <TouchableOpacity style={styles.deleteButton} onPress={handleLogout}>
                 <Ionicons name="trash-outline" size={18} color="#b71c1c" />
@@ -128,7 +160,6 @@ export default function HomeScreen() {
             </View>
           </Popup>
 
-          {/* 好きな暇つぶしポップアップ（設定の上に重ねる） */}
           <Popup
             visible={isPastimeVisible}
             onClose={() => setPastimeVisible(false)}
@@ -140,6 +171,7 @@ export default function HomeScreen() {
             <View style={styles.chipGrid}>
               {pastimeOptions.map((option) => {
                 const isSelected = selectedPastimes.includes(option);
+
                 return (
                   <TouchableOpacity
                     key={option}
@@ -147,19 +179,26 @@ export default function HomeScreen() {
                     onPress={() => togglePastime(option)}
                     activeOpacity={0.7}
                   >
-                    {isSelected && <Ionicons name="checkmark" size={16} color="#4d6048" style={styles.checkIcon} />}
+                    {isSelected && (
+                      <Ionicons
+                        name="checkmark"
+                        size={16}
+                        color="#4d6048"
+                        style={styles.checkIcon}
+                      />
+                    )}
                     <Text style={styles.chipText}>{option}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
           </Popup>
-
         </View>
 
         <View style={styles.footerWrapper}>
           <Footer
             onPressNotification={() => setPopupVisible(true)}
+            onPressCalendar={() => setCalendarPopupVisible(true)}
             onPressSettings={() => setSettingsVisible(true)}
           />
         </View>
@@ -218,6 +257,20 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
+  },
+  selectButton: {
+    backgroundColor: '#2330df',
+    paddingVertical: 12,
+    width: '80%',
+    alignSelf: 'center',
+    borderRadius: 25,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  selectButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   popupBody: {
     width: '100%',
