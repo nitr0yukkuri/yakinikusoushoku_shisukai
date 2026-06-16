@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, SafeAreaView, Image } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, SafeAreaView, Image , Text}  from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppMap } from '../components/AppMap';
 import { Footer } from '../components/Footer';
@@ -7,11 +7,23 @@ import { Popup } from '../components/Popup';
 // ★追加：プロフィール編集フォームの部品を読み込む
 import ProfileEditSection from '../components/ProfileEditSection';
 
+import { CalendarView } from '../components/CalendarView';
+
 export default function HomeScreen() {
   // 通知用のポップアップ状態
   const [isPopupVisible, setPopupVisible] = useState(false);
   // ★追加：プロフィール用のポップアップ状態
   const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
+
+  const [isCalendarPopupVisible, setCalendarPopupVisible] = useState(false);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [markedDates, setMarkedDates] = useState({});
+  const handleDayPress = (day: any) => {
+    setSelectedDate(day.dateString);
+    setMarkedDates({ 
+      [day.dateString]: { selected: true, selectedColor: '#2330df' } 
+    });
+  };
 
   return (
     <View style={styles.container}>
@@ -56,10 +68,31 @@ export default function HomeScreen() {
             <ProfileEditSection onSaveSuccess={() => setProfilePopupVisible(false)} />
           </Popup>
 
+          <Popup
+          visible={isCalendarPopupVisible}
+          onClose={() => setCalendarPopupVisible(false)}
+          title="日付を選択"
+        >
+          <CalendarView 
+            selectedDate={selectedDate}
+            onDayPress={handleDayPress}
+            markedDates={markedDates}
+          />
+
+          <TouchableOpacity 
+              style={styles.selectButton} 
+              onPress={() => setCalendarPopupVisible(false)}
+            >
+              <Text style={styles.selectButtonText}>選択</Text>
+            </TouchableOpacity>
+        </Popup>
+
         </View>
 
         <View style={styles.footerWrapper}>
-          <Footer onPressNotification={() => setPopupVisible(true)} />
+          <Footer onPressNotification={() => setPopupVisible(true)} 
+            onPressCalendar={() => setCalendarPopupVisible(true)}
+            />
         </View>
       </SafeAreaView>
     </View>
@@ -109,5 +142,26 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
+  },
+  calendarPrompt: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#515151',
+    marginBottom: 5,
+    textAlign: 'center',
+  },
+  selectButton: {
+    backgroundColor: '#2330df',
+    paddingVertical: 12,
+    width: '80%',         // ボタンの横幅をポップアップの80%にする
+    alignSelf: 'center',
+    borderRadius: 25, // 角を丸くする
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  selectButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
