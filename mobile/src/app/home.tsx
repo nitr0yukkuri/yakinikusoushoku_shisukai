@@ -20,6 +20,8 @@ import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
 import { useProfile } from '../contexts/profile-context';
 
+import MeetupSettingForm from '../components/meetupSettingForm';
+
 const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲーム', 'ジム'];
 
 export default function HomeScreen() {
@@ -54,6 +56,8 @@ export default function HomeScreen() {
       [day.dateString]: { selected: true, selectedColor: '#2330df' },
     });
   };
+
+  const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -109,6 +113,7 @@ export default function HomeScreen() {
             visible={isCalendarPopupVisible}
             onClose={() => setCalendarPopupVisible(false)}
             title="日付を選択"
+            icon="calendar-outline"
           >
             <CalendarView
               selectedDate={selectedDate}
@@ -118,10 +123,28 @@ export default function HomeScreen() {
 
             <TouchableOpacity
               style={styles.selectButton}
-              onPress={() => setCalendarPopupVisible(false)}
+              onPress={() => {
+                setCalendarPopupVisible(false); // カレンダーを閉じる
+                setMeetupSettingVisible(true);  // 待ち合わせ設定を開く！
+              }}
             >
               <Text style={styles.selectButtonText}>選択</Text>
             </TouchableOpacity>
+          </Popup>
+          <Popup
+            visible={isMeetupSettingVisible}
+            onClose={() => setMeetupSettingVisible(false)}
+            title="待ち合わせ詳細設定"
+            icon="location-outline"
+          >
+            {/* さっき作った別ファイルの部品をここで呼び出す */}
+            <MeetupSettingForm 
+              onSave={(data: any) => {
+                console.log("保存されたデータ:", data);
+                setMeetupSettingVisible(false); // 保存したら閉じる
+              }} 
+            />
+
           </Popup>
 
           <Popup
