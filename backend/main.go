@@ -415,12 +415,9 @@ func handleGoogleAuth(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		clientID := os.Getenv("GOOGLE_CLIENT_ID")
-		if clientID == "" {
-			clientID = os.Getenv("EXPO_PUBLIC_GOOGLE_CLIENT_ID")
-		}
-		if clientID == "" {
-			writeJSONError(w, http.StatusInternalServerError, "GOOGLE_CLIENT_ID is not configured")
+		clientIDs := googleClientIDs()
+		if len(clientIDs) == 0 {
+			writeJSONError(w, http.StatusInternalServerError, "Google client ID is not configured")
 			return
 		}
 
@@ -433,8 +430,9 @@ func handleGoogleAuth(pool *pgxpool.Pool) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 
-		payload, err := idtoken.Validate(ctx, req.IDToken, clientID)
+		payload, err := validateGoogleIDToken(ctx, req.IDToken, clientIDs)
 		if err != nil {
+			log.Printf("google id token validation error: %v", err)
 			writeJSONError(w, http.StatusUnauthorized, "invalid google id token")
 			return
 		}
@@ -455,6 +453,40 @@ func handleGoogleAuth(pool *pgxpool.Pool) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, googleAuthResponse{Token: token, User: user})
 	}
+}
+
+func googleClientIDs() []string {
+	keys := []string{
+		"GOOGLE_CLIENT_ID",
+		"EXPO_PUBLIC_GOOGLE_CLIENT_ID",
+		"GOOGLE_IOS_CLIENT_ID",
+		"EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID",
+		"GOOGLE_ANDROID_CLIENT_ID",
+		"EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID",
+	}
+	seen := make(map[string]bool, len(keys))
+	clientIDs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		clientID := strings.TrimSpace(os.Getenv(key))
+		if clientID == "" || seen[clientID] {
+			continue
+		}
+		seen[clientID] = true
+		clientIDs = append(clientIDs, clientID)
+	}
+	return clientIDs
+}
+
+func validateGoogleIDToken(ctx context.Context, token string, clientIDs []string) (*idtoken.Payload, error) {
+	var errs []string
+	for _, clientID := range clientIDs {
+		payload, err := idtoken.Validate(ctx, token, clientID)
+		if err == nil {
+			return payload, nil
+		}
+		errs = append(errs, err.Error())
+	}
+	return nil, fmt.Errorf("no configured Google client ID matched token audience: %s", strings.Join(errs, "; "))
 }
 
 func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Payload) (authUser, error) {
