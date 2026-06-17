@@ -21,6 +21,11 @@ type AppMapProps = {
   userId?: string;
   userName?: string;
   profileImage?: string;
+  selectedLocation?: {
+    latitude: number;
+    longitude: number;
+  } | null;
+  locationQuery?: string;
 };
 
 interface UserLocation {
@@ -39,6 +44,8 @@ export const AppMap = ({
   userId: propUserId,
   userName: propUserName,
   profileImage,
+  selectedLocation,
+  locationQuery,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -49,6 +56,7 @@ export const AppMap = ({
   const [myLocation, setMyLocation] = useState<Location.LocationObject | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const mapRef = useRef<MapView | null>(null);
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
 
@@ -208,6 +216,40 @@ export const AppMap = ({
     };
   }, [userId]);
 
+  useEffect(() => {
+    if (!selectedLocation || !isInitialized) return;
+    mapRef.current?.animateToRegion({
+      latitude: selectedLocation.latitude,
+      longitude: selectedLocation.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+    }, 300);
+  }, [isInitialized, selectedLocation]);
+
+  useEffect(() => {
+    const query = locationQuery?.trim();
+    if (!query || selectedLocation || !isInitialized) return;
+
+    const timer = setTimeout(() => {
+      Location.geocodeAsync(query)
+        .then((results) => {
+          const firstResult = results[0];
+          if (!firstResult) return;
+          mapRef.current?.animateToRegion({
+            latitude: firstResult.latitude,
+            longitude: firstResult.longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }, 300);
+        })
+        .catch((error) => {
+          console.warn('Failed to geocode selected map location:', error);
+        });
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [isInitialized, locationQuery, selectedLocation]);
+
   if (!isInitialized) {
     return (
       <View style={[styles.map, style, styles.loadingContainer]}>
@@ -221,9 +263,15 @@ export const AppMap = ({
 
   return (
     <MapView
+      ref={mapRef}
       provider={PROVIDER_GOOGLE}
       style={[styles.map, style]}
-      initialRegion={myLocation ? {
+      initialRegion={selectedLocation ? {
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      } : myLocation ? {
         latitude: myLocation.coords.latitude,
         longitude: myLocation.coords.longitude,
         latitudeDelta: 0.01,
@@ -278,6 +326,13 @@ export const AppMap = ({
           </Marker>
         );
       })}
+      {selectedLocation && (
+        <Marker
+          coordinate={selectedLocation}
+          pinColor="#ff4500"
+          title="待ち合わせ場所"
+        />
+      )}
     </MapView>
   );
 };

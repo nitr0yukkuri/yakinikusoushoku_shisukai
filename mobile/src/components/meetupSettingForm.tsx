@@ -1,6 +1,9 @@
 // components/MeetupSettingForm.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import * as Location from 'expo-location';
+import { AppMap } from './AppMap';
+import { useProfile } from '../contexts/profile-context';
 
 export interface MeetupData {
   time: string;
@@ -11,6 +14,11 @@ export interface MeetupData {
 interface Props {
   onSave: (data: MeetupData) => void;
 }
+
+type MapCoordinate = {
+  latitude: number;
+  longitude: number;
+};
 
 // フレンドのダミーデータ
 const DUMMY_FRIENDS = [
@@ -47,15 +55,50 @@ const DUMMY_FRIENDS = [
 ];
 
 export default function MeetupSettingForm({ onSave }: Props) {
+  const { profile, avatarUrl } = useProfile();
   const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<MapCoordinate | null>(null);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
+  const [friendSearch, setFriendSearch] = useState('');
+
+  const friendSearchQuery = friendSearch.trim().toLowerCase();
+  const filteredFriends = friendSearchQuery
+    ? DUMMY_FRIENDS.filter((friend) => friend.name.toLowerCase().includes(friendSearchQuery))
+    : [];
+  const selectedFriendItems = DUMMY_FRIENDS.filter((friend) => selectedFriends.includes(friend.id));
+
+  useEffect(() => {
+    const query = location.trim();
+    if (!query) {
+      setSelectedLocation(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      Location.geocodeAsync(query)
+        .then((results) => {
+          const firstResult = results[0];
+          if (!firstResult) return;
+          setSelectedLocation({
+            latitude: firstResult.latitude,
+            longitude: firstResult.longitude,
+          });
+        })
+        .catch((error) => {
+          console.warn('Failed to geocode meetup location:', error);
+        });
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [location]);
 
   const toggleFriend = (id: string) => {
     if (selectedFriends.includes(id)) {
       setSelectedFriends(selectedFriends.filter((fId) => fId !== id));
     } else {
       setSelectedFriends([...selectedFriends, id]);
+      setFriendSearch('');
     }
   };
 
@@ -76,21 +119,40 @@ export default function MeetupSettingForm({ onSave }: Props) {
 
       {/* 2. フレンド選択 */}
       <Text style={styles.label}>待ち合わせるフレンド</Text>
+      <View style={styles.friendInputBox}>
+        {selectedFriendItems.map((friend) => (
+          <TouchableOpacity
+            key={friend.id}
+            style={styles.selectedFriendItem}
+            onPress={() => toggleFriend(friend.id)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.selectedFriendText}>✓ {friend.name}</Text>
+            <Text style={styles.removeFriendText}>×</Text>
+          </TouchableOpacity>
+        ))}
+        <TextInput
+          style={styles.friendInput}
+          placeholder={selectedFriendItems.length > 0 ? '' : '名前を入力'}
+          value={friendSearch}
+          onChangeText={setFriendSearch}
+        />
+      </View>
       <View style={styles.friendsContainer}>
-        {DUMMY_FRIENDS.map((friend) => {
-          const isSelected = selectedFriends.includes(friend.id);
+        {filteredFriends.map((friend) => {
           return (
             <TouchableOpacity
               key={friend.id}
-              style={[styles.friendChip, isSelected && styles.friendChipSelected]}
+              style={styles.friendChip}
               onPress={() => toggleFriend(friend.id)}
             >
-              <Text style={[styles.friendText, isSelected && styles.friendTextSelected]}>
-                {friend.name}
-              </Text>
+              <Text style={styles.friendText}>{friend.name}</Text>
             </TouchableOpacity>
           );
         })}
+        {friendSearchQuery && filteredFriends.length === 0 && (
+          <Text style={styles.noFriendText}>該当するフレンドはいません</Text>
+        )}
       </View>
 
       {/* 3. 場所 */}
@@ -104,13 +166,16 @@ export default function MeetupSettingForm({ onSave }: Props) {
 
       {/* 4. 地図 (仮の白い四角) */}
       <Text style={styles.label}>地図から選ぶ</Text>
-      <TouchableOpacity 
-        style={styles.mapPlaceholder} 
-        activeOpacity={0.7}
-        onPress={() => console.log('地図を開く処理をここに書きます')}
-      >
-        <Text style={styles.mapPlaceholderText}>📍 ここに地図が表示されます</Text>
-      </TouchableOpacity>
+      <View style={styles.mapWindow}>
+        <AppMap
+          style={styles.map}
+          userId={profile?.userId}
+          userName={profile?.name}
+          profileImage={avatarUrl || undefined}
+          selectedLocation={selectedLocation}
+          locationQuery={location}
+        />
+      </View>
 
       {/* 保存ボタン */}
       <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
@@ -124,28 +189,29 @@ const styles = StyleSheet.create({
   container: { width: '100%', marginTop: 10 },
   label: { fontSize: 14, color: '#333', marginBottom: 8, marginTop: 16 },
   input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, backgroundColor: '#fff' },
+  friendInputBox: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#fff', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, minHeight: 46 },
+  friendInput: { flex: 1, minWidth: 96, paddingVertical: 6, fontSize: 14 },
+  selectedFriendItem: { borderWidth: 1, borderColor: 'rgba(51, 51, 51, 0.25)', borderRadius: 16, paddingVertical: 5, paddingLeft: 10, paddingRight: 8, flexDirection: 'row', alignItems: 'center', maxWidth: '100%' },
+  selectedFriendText: { color: 'rgba(51, 51, 51, 0.55)', fontSize: 14, fontWeight: '600' },
+  removeFriendText: { color: 'rgba(51, 51, 51, 0.5)', fontSize: 15, fontWeight: '700', marginLeft: 8, lineHeight: 16 },
   friendsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  friendChip: { borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingVertical: 8, paddingHorizontal: 16, marginBottom: 8, marginRight: 8 },
-  friendChipSelected: { backgroundColor: '#2330df', borderColor: '#2330df' },
+  friendChip: { borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingVertical: 8, paddingHorizontal: 16, marginBottom: 8, marginRight: 8, flexDirection: 'row', alignItems: 'center' },
   friendText: { color: '#333' },
-  friendTextSelected: { color: '#fff', fontWeight: 'bold' },
+  noFriendText: { color: '#888', fontSize: 13, marginTop: 8 },
   
   // ▼ 追加：地図の仮置き用のスタイル
-  mapPlaceholder: {
-    height: 150, // 四角の高さを指定
+  mapWindow: {
+    height: 220, // 四角の高さを指定
     backgroundColor: '#ffffff', // 白い背景
     borderWidth: 1,
     borderColor: '#ccc', // 枠線を少しグレーに
-    borderStyle: 'dashed', // 点線にして「仮」っぽさを出す（お好みで solid に変更可）
     borderRadius: 8,
-    justifyContent: 'center', // 縦の真ん中に文字を配置
-    alignItems: 'center', // 横の真ん中に文字を配置
     marginTop: 4,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  mapPlaceholderText: {
-    color: '#888',
-    fontSize: 14,
-    fontWeight: 'bold',
+  map: {
+    ...StyleSheet.absoluteFillObject,
   },
   
   saveButton: { backgroundColor: '#007AFF', paddingVertical: 15, borderRadius: 25, alignItems: 'center', marginTop: 30 },
