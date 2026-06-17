@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+import { getApiUrl } from '../utils/api-url';
+
+const apiUrl = getApiUrl();
 const SESSION_STORAGE_KEY = 'matsunya.session';
 
 

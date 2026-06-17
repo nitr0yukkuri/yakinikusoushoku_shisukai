@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
 import { useProfile, UserProfile } from '../contexts/profile-context';
+import { getApiUrl } from '../utils/api-url';
 import { getProfileImageSignature } from '../utils/profile-image';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -21,7 +22,7 @@ type AuthResponse = {
 const webClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
 const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
-const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+const apiUrl = getApiUrl();
 
 export default function LoginScreen() {
   const router = useRouter();
