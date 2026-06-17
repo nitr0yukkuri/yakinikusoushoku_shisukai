@@ -19,6 +19,11 @@ type AppMapProps = {
   userId?: string;
   userName?: string;
   profileImage?: string;
+  selectedLocation?: {
+    latitude: number;
+    longitude: number;
+  } | null;
+  locationQuery?: string;
 };
 
 const fallbackMarkerUrl = (name: string, size = 48) => {
@@ -161,6 +166,8 @@ export const AppMap = ({
   userId: propUserId,
   userName: propUserName,
   profileImage,
+  selectedLocation,
+  locationQuery,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -175,6 +182,7 @@ export const AppMap = ({
   const otherMarkersRef = useRef<Record<string, any>>({});
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
   const myMarkerRef = useRef<any>(null);
+  const selectedMarkerRef = useRef<any>(null);
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -257,6 +265,56 @@ export const AppMap = ({
       markerProfileVersionsRef.current = {};
     };
   }, [roomId, userId]);
+
+  const moveSelectedMarker = (position: { lat: number; lng: number }) => {
+    const browserWindow = window as any;
+    if (!browserWindow.google?.maps?.Marker || !mapInstanceRef.current) return;
+
+    if (selectedMarkerRef.current) {
+      selectedMarkerRef.current.setPosition(position);
+    } else {
+      selectedMarkerRef.current = new browserWindow.google.maps.Marker({
+        position,
+        map: mapInstanceRef.current,
+        title: '待ち合わせ場所',
+      });
+    }
+
+    mapInstanceRef.current.panTo(position);
+  };
+
+  useEffect(() => {
+    if (!selectedLocation) {
+      selectedMarkerRef.current?.setMap(null);
+      selectedMarkerRef.current = null;
+      return;
+    }
+
+    moveSelectedMarker({
+      lat: selectedLocation.latitude,
+      lng: selectedLocation.longitude,
+    });
+  }, [isInitialized, selectedLocation]);
+
+  useEffect(() => {
+    const browserWindow = window as any;
+    const query = locationQuery?.trim();
+    if (!query || selectedLocation || !isInitialized || !browserWindow.google?.maps?.Geocoder) return;
+
+    const timer = setTimeout(() => {
+      const geocoder = new browserWindow.google.maps.Geocoder();
+      geocoder.geocode({ address: query }, (results: any[], status: string) => {
+        if (status !== 'OK' || !results?.[0]?.geometry?.location) return;
+        const location = results[0].geometry.location;
+        moveSelectedMarker({
+          lat: location.lat(),
+          lng: location.lng(),
+        });
+      });
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [isInitialized, locationQuery, selectedLocation]);
 
   useEffect(() => {
     let watchId: number | null = null;
