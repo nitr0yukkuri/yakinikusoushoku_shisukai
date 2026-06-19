@@ -5,11 +5,12 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   FlatList, 
-  TextInput,
-  Image
+  TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg'; // ★追加：QRコード生成ライブラリ
 import { ProfileAvatar } from './ProfileAvatar';
+import { useProfile } from '../contexts/profile-context'; // ★追加：自分のプロフィール情報を取得するため
 
 // 動作確認用のダミーデータ
 const DUMMY_FRIENDS = [
@@ -18,8 +19,10 @@ const DUMMY_FRIENDS = [
 ];
 
 export const FriendPanel: React.FC = () => {
+  // 自分のプロフィール（IDなど）を取得
+  const { profile } = useProfile();
+
   // 現在表示している画面（タブ）を管理するState
-  // 'list': フレンド一覧, 'search': ID検索, 'qr': QRコード
   const [activeTab, setActiveTab] = useState<'list' | 'search' | 'qr'>('list');
   const [searchId, setSearchId] = useState('');
 
@@ -49,7 +52,7 @@ export const FriendPanel: React.FC = () => {
           <FlatList
             data={DUMMY_FRIENDS}
             keyExtractor={(item) => item.id}
-            scrollEnabled={false} // ポップアップ内なのでスクロールは外側に任せる
+            scrollEnabled={false}
             renderItem={({ item }) => (
               <View style={styles.friendListItem}>
                 <ProfileAvatar profileImage={item.profileImage} name={item.name} size={40} />
@@ -85,7 +88,6 @@ export const FriendPanel: React.FC = () => {
 
         <Text style={styles.sectionTitle}>検索結果</Text>
         
-        {/* 検索結果がある場合のみ表示する処理（今はダミーを固定表示） */}
         <View style={styles.searchResultItem}>
           <ProfileAvatar profileImage={null} name="ともだちA" size={40} />
           <Text style={styles.searchResultName}>ともだちA</Text>
@@ -99,6 +101,9 @@ export const FriendPanel: React.FC = () => {
 
   // 3. QRコード画面
   if (activeTab === 'qr') {
+    // QRコードに埋め込む値（自分のユーザーID）。取得できない場合は仮の文字を入れる。
+    const qrValue = profile?.userId ? `user_id:${profile.userId}` : 'unknown_user';
+
     return (
       <View style={styles.container}>
         <View style={styles.subHeader}>
@@ -110,9 +115,14 @@ export const FriendPanel: React.FC = () => {
         </View>
 
         <View style={styles.qrContainer}>
-          <View style={styles.qrCodePlaceholder}>
-            <Ionicons name="qr-code" size={150} color="#333" />
-            {/* 本番では react-native-qrcode-svg などを使って本物のQRを生成します */}
+          <View style={styles.qrCodeWrapper}>
+            {/* ★ここが本物のQRコードになります */}
+            <QRCode
+              value={qrValue}
+              size={180}
+              color="#1f1f1f"
+              backgroundColor="#FFFFFF"
+            />
           </View>
           <Text style={styles.qrDescription}>
             相手に読み取ってもらい、{'\n'}フレンドを追加してください
@@ -129,7 +139,7 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     padding: 16,
-    backgroundColor: '#e2fbe2', // 画面の背景色と統一
+    backgroundColor: '#e2fbe2',
   },
   
   // --- リスト画面のスタイル ---
@@ -254,20 +264,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 20,
   },
-  qrCodePlaceholder: {
-    width: 200,
-    height: 200,
+  qrCodeWrapper: {
     backgroundColor: '#FFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#000',
-    marginBottom: 20,
+    padding: 16, // QRコードの周りに白い余白を作る
+    borderRadius: 16, // 少し丸みを持たせてモダンに
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 24,
   },
   qrDescription: {
     textAlign: 'center',
-    fontSize: 14,
-    color: '#333',
-    lineHeight: 20,
+    fontSize: 15,
+    color: '#4d6048',
+    fontWeight: '600',
+    lineHeight: 22,
   },
 });
