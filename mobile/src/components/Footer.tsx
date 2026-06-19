@@ -3,12 +3,14 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface FooterProps {
+  onPressFriend?: () => void;      // ★ここを変更！
   onPressNotification?: () => void;
   onPressCalendar?: () => void;
   onPressSettings?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
+  onPressFriend,
   onPressNotification,
   onPressCalendar,
   onPressSettings,
@@ -16,7 +18,7 @@ export const Footer: React.FC<FooterProps> = ({
   return (
     <View style={styles.footerContainer}>
       {/* 1. フレンド */}
-      <TouchableOpacity style={styles.tab}>
+      <TouchableOpacity style={styles.tab} onPress={onPressFriend}>
         <View style={styles.iconContainer}>
           <Ionicons name="person-add-outline" size={26} color="#515151" />
         </View>
