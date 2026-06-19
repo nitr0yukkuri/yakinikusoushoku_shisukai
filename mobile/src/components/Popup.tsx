@@ -24,7 +24,7 @@ export const Popup: React.FC<PopupProps> = ({
   message,
   children,
   icon = "notifications-outline",
-  sheetHeight = SCREEN_HEIGHT * 0.7, // 高さ75%
+  sheetHeight = SCREEN_HEIGHT * 0.75, // 高さ75%くらいなはずたぶんきっと
   slideDirection = 'bottom',
   showBackButton = false,
 }) => {
