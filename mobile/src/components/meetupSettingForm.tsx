@@ -1,5 +1,5 @@
 // components/MeetupSettingForm.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import * as Location from 'expo-location';
 import { AppMap } from './AppMap';
@@ -37,6 +37,7 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const mapSelectionRef = useRef(false);
 
   const friendSearchQuery = friendSearch.trim().toLowerCase();
   const filteredFriends = friendSearchQuery
@@ -60,6 +61,10 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
     if (!query) {
       return;
     }
+    if (mapSelectionRef.current) {
+      mapSelectionRef.current = false;
+      return;
+    }
 
     const timer = setTimeout(() => {
       Location.geocodeAsync(query)
@@ -80,8 +85,30 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
   }, [location]);
 
   const handleLocationChange = (value: string) => {
+    mapSelectionRef.current = false;
     setLocation(value);
     if (!value.trim()) setSelectedLocation(null);
+  };
+
+  const handleMapLocationSelect = async (coordinate: MapCoordinate, address?: string) => {
+    setSelectedLocation(coordinate);
+    mapSelectionRef.current = true;
+    setLocation(address || `${coordinate.latitude.toFixed(6)}, ${coordinate.longitude.toFixed(6)}`);
+    if (address) return;
+
+    try {
+      const [result] = await Location.reverseGeocodeAsync(coordinate);
+      if (!result) return;
+      const resolvedAddress = [result.region, result.city, result.district, result.street, result.name]
+        .filter((part, index, parts) => part && parts.indexOf(part) === index)
+        .join('');
+      if (resolvedAddress) {
+        mapSelectionRef.current = true;
+        setLocation(resolvedAddress);
+      }
+    } catch (error) {
+      console.warn('Failed to reverse geocode selected map location:', error);
+    }
   };
 
   const toggleFriend = (userId: string) => {
@@ -143,6 +170,7 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
       <TextInput
         style={styles.input}
         placeholder="例: 19:00"
+        placeholderTextColor="rgba(51, 51, 51, 0.45)"
         value={time}
         onChangeText={setTime}
       />
@@ -164,6 +192,7 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
         <TextInput
           style={styles.friendInput}
           placeholder={selectedFriendItems.length > 0 ? '' : '名前を入力'}
+          placeholderTextColor="rgba(51, 51, 51, 0.45)"
           value={friendSearch}
           onChangeText={setFriendSearch}
         />
@@ -190,6 +219,7 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
       <TextInput
         style={styles.input}
         placeholder="住所を入力"
+        placeholderTextColor="rgba(51, 51, 51, 0.45)"
         value={location}
         onChangeText={handleLocationChange}
       />
@@ -204,6 +234,7 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
           profileImage={avatarUrl || undefined}
           selectedLocation={selectedLocation}
           locationQuery={location}
+          onLocationSelect={handleMapLocationSelect}
         />
       </View>
 
@@ -219,9 +250,9 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
 const styles = StyleSheet.create({
   container: { width: '100%', marginTop: 10 },
   label: { fontSize: 14, color: '#333', marginBottom: 8, marginTop: 16 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, backgroundColor: '#fff' },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, backgroundColor: '#fff', color: 'rgba(51, 51, 51, 0.55)' },
   friendInputBox: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#fff', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, minHeight: 46 },
-  friendInput: { flex: 1, minWidth: 96, paddingVertical: 6, fontSize: 14 },
+  friendInput: { flex: 1, minWidth: 96, paddingVertical: 6, fontSize: 14, color: 'rgba(51, 51, 51, 0.55)' },
   selectedFriendItem: { borderWidth: 1, borderColor: 'rgba(51, 51, 51, 0.25)', borderRadius: 16, paddingVertical: 5, paddingLeft: 10, paddingRight: 8, flexDirection: 'row', alignItems: 'center', maxWidth: '100%' },
   selectedFriendText: { color: 'rgba(51, 51, 51, 0.55)', fontSize: 14, fontWeight: '600' },
   removeFriendText: { color: 'rgba(51, 51, 51, 0.5)', fontSize: 15, fontWeight: '700', marginLeft: 8, lineHeight: 16 },

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { ProfileAvatar } from './ProfileAvatar';
 import { useProfile } from '../contexts/profile-context';
 import { getPersistableProfileImage, getProfileImageSignature } from '../utils/profile-image';
+import { getApiUrl } from '../utils/api-url';
+
+const apiUrl = getApiUrl();
 
 interface ProfileEditSectionProps {
   onSaveSuccess: () => void; // 保存が成功したときにポップアップを閉じるための関数
@@ -19,12 +22,48 @@ interface ProfileEditSectionProps {
 
 export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSectionProps) {
   const { profile, avatarUrl, saveProfile } = useProfile();
+  const [userId, setUserId] = useState<string>(profile?.userId || '');
+  const [userIdError, setUserIdError] = useState('');
+  const [isCheckingUserId, setIsCheckingUserId] = useState(false);
+  const [isDuplicateUserId, setIsDuplicateUserId] = useState(false);
   const [name, setName] = useState<string>(profile?.name || '');
   // ★自己紹介用の状態（初期値）を追加
   const [bio, setBio] = useState<string>(profile?.bio || '');
   const [imageUri, setImageUri] = useState<string | null>(avatarUrl);
   const imageUriRef = useRef<string | null>(avatarUrl);
   const [isSaving, setIsSaving] = useState(false);
+  const hasOverLimitValue = userId.length > 20 || name.length > 20;
+
+  useEffect(() => {
+    const trimmedUserId = userId.trim();
+    if (
+      !trimmedUserId ||
+      trimmedUserId === profile?.userId ||
+      trimmedUserId.length > 20 ||
+      !/^[a-zA-Z0-9]+$/.test(trimmedUserId)
+    ) {
+      return;
+    }
+
+    let isActive = true;
+    const timer = setTimeout(async () => {
+      if (isActive) setIsCheckingUserId(true);
+      try {
+        const response = await fetch(`${apiUrl}/profiles?userId=${encodeURIComponent(trimmedUserId)}`);
+        if (!isActive) return;
+        setIsDuplicateUserId(response.ok);
+      } catch (error) {
+        console.warn('Failed to check user ID availability:', error);
+      } finally {
+        if (isActive) setIsCheckingUserId(false);
+      }
+    }, 500);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timer);
+    };
+  }, [profile?.userId, userId]);
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -53,29 +92,51 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
   };
 
   const handleSave = async () => {
+    const trimmedUserId = userId.trim();
+    if (!trimmedUserId) {
+      Alert.alert('エラー', 'ユーザーIDを入力してください。');
+      return;
+    }
+    if (!/^[a-zA-Z0-9]+$/.test(trimmedUserId)) {
+      Alert.alert('エラー', 'ユーザーIDは半角英数字で入力してください。');
+      return;
+    }
+    if (trimmedUserId.length > 20) {
+      Alert.alert('エラー', 'ユーザーIDを20文字以内に修正してください。');
+      return;
+    }
+    if (isDuplicateUserId) {
+      Alert.alert('エラー', 'このユーザーIDはすでに使われています。');
+      return;
+    }
     if (!name.trim()) {
-      Alert.alert('エラー', '名前を入力してください。');
+      Alert.alert('エラー', 'ユーザーネームを入力してください。');
+      return;
+    }
+    if (name.trim().length > 20) {
+      Alert.alert('エラー', 'ユーザーネームを20文字以内に修正してください。');
       return;
     }
 
     try {
-      if (!profile?.userId) {
+      if (!profile) {
         throw new Error('プロフィール登録が完了していません。');
       }
 
       setIsSaving(true);
       await saveProfile({
-        userId: profile.userId,
-        userName: name,
+        userId: trimmedUserId,
+        userName: name.trim(),
         profileImage: imageUriRef.current ?? imageUri ?? avatarUrl ?? profile.profileImage ?? '',
         bio,
       });
       Alert.alert('成功', 'プロフィールを更新しました。');
       onSaveSuccess();
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'プロフィールの更新に失敗しました。';
       Alert.alert(
         'エラー',
-        error instanceof Error ? error.message : 'プロフィールの更新に失敗しました。',
+        message === 'userId is already in use' ? 'このユーザーIDはすでに使われています。' : message,
       );
     } finally {
       setIsSaving(false);
@@ -102,16 +163,50 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
         />
       </TouchableOpacity>
 
-      {/* 名前入力 */}
       <View style={styles.inputContainer}>
-        <Text style={styles.label}>名前</Text>
+        <Text style={styles.label}>ユーザーID</Text>
+        <TextInput
+          style={[styles.input, userIdError ? styles.inputError : null]}
+          value={userId}
+          onChangeText={(value) => {
+            setUserId(value);
+            setIsCheckingUserId(false);
+            setIsDuplicateUserId(false);
+            setUserIdError(value && !/^[a-zA-Z0-9]*$/.test(value) ? '半角英数字のみで入力してください' : '');
+          }}
+          placeholder="半角英数字で入力"
+          placeholderTextColor="rgba(51, 51, 51, 0.45)"
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={20}
+        />
+        {userIdError ? <Text style={styles.errorText}>{userIdError}</Text> : null}
+        {isDuplicateUserId ? <Text style={styles.errorText}>このユーザーIDはすでに使われています</Text> : null}
+        {userId.length > 20 ? (
+          <Text style={styles.limitWarning}>20文字を超えています。20文字以内に修正してください</Text>
+        ) : userId.length === 20 ? (
+          <Text style={styles.limitWarning}>ユーザーIDは20文字までです</Text>
+        ) : null}
+        <Text style={styles.charCount}>{userId.length} / 20</Text>
+      </View>
+
+      {/* ユーザーネーム入力 */}
+      <View style={styles.inputContainer}>
+        <Text style={styles.label}>ユーザーネーム</Text>
         <TextInput
           style={styles.input}
           value={name}
           onChangeText={setName}
-          placeholder="名前を入力"
+          placeholder="アプリ内で表示される名前"
+          placeholderTextColor="rgba(51, 51, 51, 0.45)"
           maxLength={20}
         />
+        {name.length > 20 ? (
+          <Text style={styles.limitWarning}>20文字を超えています。20文字以内に修正してください</Text>
+        ) : name.length === 20 ? (
+          <Text style={styles.limitWarning}>ユーザーネームは20文字までです</Text>
+        ) : null}
+        <Text style={styles.charCount}>{name.length} / 20</Text>
       </View>
 
       {/* ★追加：自己紹介入力 */}
@@ -122,6 +217,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
           value={bio}
           onChangeText={setBio}
           placeholder="簡単な自己紹介を入力してください"
+          placeholderTextColor="rgba(51, 51, 51, 0.45)"
           maxLength={100} // 最大100文字
           multiline={true} // 複数行入力を有効にする
           numberOfLines={4} // Android用のおおよその行数目安
@@ -131,7 +227,11 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       </View>
 
       {/* 保存ボタン */}
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={isSaving}>
+      <TouchableOpacity
+        style={[styles.saveButton, (isSaving || hasOverLimitValue || isCheckingUserId || isDuplicateUserId) && styles.saveButtonDisabled]}
+        onPress={handleSave}
+        disabled={isSaving || hasOverLimitValue || isCheckingUserId || isDuplicateUserId}
+      >
         <Text style={styles.saveButtonText}>保存する</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -186,6 +286,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#fafafa',
   },
+  inputError: {
+    borderColor: '#c62828',
+  },
+  errorText: {
+    color: '#c62828',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  limitWarning: {
+    color: '#c62828',
+    fontSize: 12,
+    marginTop: 4,
+  },
   // ★自己紹介用の長方形の枠スタイル
   textArea: {
     height: 100, // 高さを広げる
@@ -205,6 +318,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
   },
   saveButtonText: {
     color: '#fff',

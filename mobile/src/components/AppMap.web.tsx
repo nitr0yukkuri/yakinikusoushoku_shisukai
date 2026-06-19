@@ -12,6 +12,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 let googleMapsScriptPromise: Promise<void> | null = null;
 const markerUrlCache = new Map<string, Promise<string>>();
 const markerIconVersions = new WeakMap<object, string>();
+const CURRENT_LOCATION_RING = '#000000';
 
 type AppMapProps = {
   style?: StyleProp<ViewStyle>;
@@ -25,10 +26,11 @@ type AppMapProps = {
     longitude: number;
   } | null;
   locationQuery?: string;
+  onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
 };
 
-const fallbackMarkerUrl = (name: string, size = 48) => {
-  const inset = 2;
+const fallbackMarkerUrl = (name: string, size = 48, ringColor?: string) => {
+  const inset = ringColor ? 4 : 2;
   const diameter = size - inset * 2;
   const initials = getAvatarInitials(name)
     .replaceAll('&', '&amp;')
@@ -37,7 +39,8 @@ const fallbackMarkerUrl = (name: string, size = 48) => {
     .replaceAll('>', '&gt;');
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="#ffffff" />
+      <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="#ffffff"
+        ${ringColor ? `stroke="${ringColor}" stroke-width="3"` : ''} />
       <circle cx="${size / 2}" cy="${size / 2}" r="${diameter / 2}" fill="#208AEF" />
       <text x="${size / 2}" y="${size / 2}" text-anchor="middle" dominant-baseline="central"
         fill="#ffffff" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.38)}"
@@ -47,24 +50,25 @@ const fallbackMarkerUrl = (name: string, size = 48) => {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 };
 
-const blankMarkerUrl = (size = 48) => {
+const blankMarkerUrl = (size = 48, ringColor?: string) => {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2}" fill="#ffffff" />
+      <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="#ffffff"
+        ${ringColor ? `stroke="${ringColor}" stroke-width="3"` : ''} />
     </svg>
   `;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 };
 
-const circularMarkerUrl = (name: string, profileImage?: string, size = 48) => {
+const circularMarkerUrl = (name: string, profileImage?: string, size = 48, ringColor?: string) => {
   if (!profileImage) {
-    return Promise.resolve(fallbackMarkerUrl(name, size));
+    return Promise.resolve(fallbackMarkerUrl(name, size, ringColor));
   }
   if (profileImage.startsWith('data:image/') !== true || typeof document === 'undefined') {
-    return Promise.resolve(blankMarkerUrl(size));
+    return Promise.resolve(blankMarkerUrl(size, ringColor));
   }
 
-  const cacheKey = `${size}:${getProfileImageSignature(profileImage)}`;
+  const cacheKey = `${size}:${ringColor || 'none'}:${getProfileImageSignature(profileImage)}`;
   const cached = markerUrlCache.get(cacheKey);
   if (cached) return cached;
 
@@ -76,16 +80,21 @@ const circularMarkerUrl = (name: string, profileImage?: string, size = 48) => {
       canvas.height = size;
       const context = canvas.getContext('2d');
       if (!context) {
-        resolve(blankMarkerUrl(size));
+        resolve(blankMarkerUrl(size, ringColor));
         return;
       }
 
-      const inset = 2;
+      const inset = ringColor ? 4 : 2;
       const diameter = size - inset * 2;
       context.fillStyle = '#ffffff';
       context.beginPath();
-      context.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+      context.arc(size / 2, size / 2, size / 2 - 1.5, 0, Math.PI * 2);
       context.fill();
+      if (ringColor) {
+        context.strokeStyle = ringColor;
+        context.lineWidth = 3;
+        context.stroke();
+      }
       context.save();
       context.beginPath();
       context.arc(size / 2, size / 2, diameter / 2, 0, Math.PI * 2);
@@ -100,7 +109,7 @@ const circularMarkerUrl = (name: string, profileImage?: string, size = 48) => {
       context.restore();
       resolve(canvas.toDataURL('image/png'));
     };
-    image.onerror = () => resolve(blankMarkerUrl(size));
+    image.onerror = () => resolve(blankMarkerUrl(size, ringColor));
     image.src = profileImage;
   });
 
@@ -114,11 +123,12 @@ const setMarkerIcon = (
   name: string,
   profileImage?: string,
   size = 48,
+  ringColor?: string,
 ) => {
-  const signature = `${name}:${size}:${getProfileImageSignature(profileImage)}`;
+  const signature = `${name}:${size}:${ringColor || 'none'}:${getProfileImageSignature(profileImage)}`;
   markerIconVersions.set(marker, signature);
 
-  circularMarkerUrl(name, profileImage, size).then((url) => {
+  circularMarkerUrl(name, profileImage, size, ringColor).then((url) => {
     if (markerIconVersions.get(marker) !== signature) return;
     marker.setIcon({
       url,
@@ -170,6 +180,7 @@ export const AppMap = ({
   profileImage,
   selectedLocation,
   locationQuery,
+  onLocationSelect,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -185,8 +196,18 @@ export const AppMap = ({
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
   const myMarkerRef = useRef<any>(null);
   const selectedMarkerRef = useRef<any>(null);
+  const selectedLocationRef = useRef(selectedLocation);
+  const onLocationSelectRef = useRef(onLocationSelect);
 
   const [isInitialized, setIsInitialized] = useState(false);
+
+  useEffect(() => {
+    selectedLocationRef.current = selectedLocation;
+  }, [selectedLocation]);
+
+  useEffect(() => {
+    onLocationSelectRef.current = onLocationSelect;
+  }, [onLocationSelect]);
 
   useEffect(() => {
     profileRef.current = { userName, profileImage };
@@ -195,7 +216,7 @@ export const AppMap = ({
     if (!myMarkerRef.current || !browserWindow.google?.maps) return;
 
     myMarkerRef.current.setTitle(userName);
-    setMarkerIcon(browserWindow, myMarkerRef.current, userName, profileImage);
+    setMarkerIcon(browserWindow, myMarkerRef.current, userName, profileImage, 48, CURRENT_LOCATION_RING);
 
     if (wsRef.current?.readyState === WebSocket.OPEN && currentPositionRef.current) {
       wsRef.current.send(JSON.stringify({
@@ -321,43 +342,60 @@ export const AppMap = ({
 
   useEffect(() => {
     let watchId: number | null = null;
+    let mapClickListener: { remove: () => void } | null = null;
     let isMounted = true;
 
     const initMapAndLocation = async () => {
       try {
         await loadGoogleMapsScript();
-        console.log('mapElementRef', mapElementRef.current);
-
         if (!isMounted || !mapElementRef.current) return;
 
         const browserWindow = window as any;
         if (!browserWindow.google?.maps?.Map) return;
 
-        const fetchLocation = () => new Promise<any>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error('Location fetch timeout')), 5000);
-          navigator.geolocation.getCurrentPosition(
-            (pos) => { clearTimeout(timer); resolve(pos); },
-            (err) => { clearTimeout(timer); reject(err); },
-            { enableHighAccuracy: true, maximumAge: 0 }
-          );
+        mapInstanceRef.current = new browserWindow.google.maps.Map(mapElementRef.current, {
+          center: INITIAL_REGION,
+          zoom: 16,
+          disableDefaultUI: true,
+          zoomControl: true,
+        });
+        setIsInitialized(true);
+
+        mapClickListener = mapInstanceRef.current.addListener('click', (event: any) => {
+          if (!event.latLng || !onLocationSelectRef.current) return;
+          const coordinate = {
+            latitude: event.latLng.lat(),
+            longitude: event.latLng.lng(),
+          };
+          selectedLocationRef.current = coordinate;
+          moveSelectedMarker({ lat: coordinate.latitude, lng: coordinate.longitude });
+          onLocationSelectRef.current(coordinate);
+
+          const geocoder = new browserWindow.google.maps.Geocoder();
+          geocoder.geocode({ location: event.latLng }, (results: any[], status: string) => {
+            if (status !== 'OK' || !results?.[0]?.formatted_address) return;
+            onLocationSelectRef.current?.(coordinate, results[0].formatted_address);
+          });
         });
 
-        if (navigator.geolocation) {
-          try {
-            const position = await fetchLocation();
-            const currentPos = {
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-            };
-            currentPositionRef.current = currentPos;
+        if (!navigator.geolocation) {
+          console.warn('Geolocation is not supported by this browser.');
+          return;
+        }
 
-            mapInstanceRef.current = new browserWindow.google.maps.Map(mapElementRef.current, {
-              center: currentPos,
-              zoom: 16,
-              disableDefaultUI: true,
-              zoomControl: true,
-            });
+        let hasCurrentPosition = false;
+        const applyCurrentPosition = (position: GeolocationPosition) => {
+          if (!isMounted || !mapInstanceRef.current) return;
+          const currentPos = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          currentPositionRef.current = currentPos;
 
+          if (myMarkerRef.current) {
+            myMarkerRef.current.setMap(mapInstanceRef.current);
+            myMarkerRef.current.setPosition(currentPos);
+          } else {
             myMarkerRef.current = new browserWindow.google.maps.Marker({
               position: currentPos,
               map: mapInstanceRef.current,
@@ -368,50 +406,39 @@ export const AppMap = ({
               myMarkerRef.current,
               profileRef.current.userName,
               profileRef.current.profileImage,
+              48,
+              CURRENT_LOCATION_RING,
             );
-
-            setIsInitialized(true);
-
-            watchId = navigator.geolocation.watchPosition(
-              (newPos) => {
-                const newLatLng = { lat: newPos.coords.latitude, lng: newPos.coords.longitude };
-                currentPositionRef.current = newLatLng;
-                myMarkerRef.current?.setPosition(newLatLng);
-
-                if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                  wsRef.current.send(JSON.stringify({
-                    type: 'LOCATION_UPDATE',
-                    userId: userId,
-                    userName: profileRef.current.userName,
-                    profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
-                    lat: newPos.coords.latitude,
-                    lng: newPos.coords.longitude,
-                    timestamp: newPos.timestamp,
-                  }));
-                }
-              },
-              (error) => console.warn('Watch Position Error:', error),
-              { enableHighAccuracy: true, maximumAge: 5000, timeout: 5000 }
-            );
-          } catch (error) {
-            console.warn('Geolocation failed or timed out:', error);
-            mapInstanceRef.current = new browserWindow.google.maps.Map(mapElementRef.current, {
-              center: INITIAL_REGION,
-              zoom: 16,
-              disableDefaultUI: true,
-              zoomControl: true,
-            });
-            setIsInitialized(true);
           }
-        } else {
-          mapInstanceRef.current = new browserWindow.google.maps.Map(mapElementRef.current, {
-            center: INITIAL_REGION,
-            zoom: 16,
-            disableDefaultUI: true,
-            zoomControl: true,
-          });
-          setIsInitialized(true);
-        }
+
+          if (!hasCurrentPosition && !selectedLocationRef.current) {
+            mapInstanceRef.current.panTo(currentPos);
+            mapInstanceRef.current.setZoom(16);
+          }
+          hasCurrentPosition = true;
+
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: 'LOCATION_UPDATE',
+              userId,
+              userName: profileRef.current.userName,
+              profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
+              ...currentPos,
+              timestamp: position.timestamp,
+            }));
+          }
+        };
+
+        navigator.geolocation.getCurrentPosition(
+          applyCurrentPosition,
+          (error) => console.warn('Initial geolocation failed:', error),
+          { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 },
+        );
+        watchId = navigator.geolocation.watchPosition(
+          applyCurrentPosition,
+          (error) => console.warn('Watch Position Error:', error),
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
+        );
       } catch (error) {
         console.error('Google Maps init failed:', error);
         setIsInitialized(true);
@@ -425,8 +452,10 @@ export const AppMap = ({
       if (watchId !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchId);
       }
+      mapClickListener?.remove();
       if (myMarkerRef.current) {
         myMarkerRef.current.setMap(null);
+        myMarkerRef.current = null;
       }
     };
   }, [userId]);
