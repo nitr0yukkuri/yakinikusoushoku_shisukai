@@ -12,23 +12,20 @@ import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Popup } from '../components/Popup';
 import { ProfileAvatar } from '../components/ProfileAvatar';
+import { Footer } from '../components/Footer';
 
-// 動作確認用のダミーデータ（後でバックエンドのAPIと連携させます）
+// 動作確認用のダミーデータ
 const DUMMY_FRIENDS = [
   { id: '1', name: '焼肉 太郎', bio: 'カルビしか勝たん' },
   { id: '2', name: 'ホルモン 花子', bio: '週末はいつも焼肉です！' },
 ];
 
 export default function FriendScreen() {
-  // ポップアップの表示/非表示を管理するState
   const [isAddPopupVisible, setIsAddPopupVisible] = useState(false);
-  // 入力された検索IDを管理するState
   const [searchId, setSearchId] = useState('');
 
-  // フレンドリストの1行分を描画する関数
   const renderFriendItem = ({ item }: { item: typeof DUMMY_FRIENDS[0] }) => (
     <View style={styles.friendCard}>
-      {/* 修正済み: エラーが出ないように profileImage と name を正しく渡しています */}
       <ProfileAvatar profileImage={null} name={item.name} size={50} />
       <View style={styles.friendInfo}>
         <Text style={styles.friendName}>{item.name}</Text>
@@ -42,7 +39,6 @@ export default function FriendScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* 画面上部のヘッダー設定 */}
       <Stack.Screen 
         options={{
           title: 'フレンド',
@@ -57,7 +53,6 @@ export default function FriendScreen() {
         }} 
       />
 
-      {/* フレンド一覧 */}
       <FlatList
         data={DUMMY_FRIENDS}
         keyExtractor={(item) => item.id}
@@ -71,20 +66,16 @@ export default function FriendScreen() {
         }
       />
 
-      {/* フレンド追加用のポップアップ（自作コンポーネントを使用） */}
+      {/* 修正箇所：Popup.tsx の機能を正しく使うように変更 */}
       <Popup 
         visible={isAddPopupVisible} 
         onClose={() => setIsAddPopupVisible(false)}
+        title="フレンド追加"
+        message="ユーザーIDを入力してフレンドを検索します。"
+        icon="person-add-outline" // ヘッダー左のアイコンを指定
       >
-        <View style={styles.popupContent}>
-          <View style={styles.popupHeader}>
-            <Text style={styles.popupTitle}>フレンド追加</Text>
-          </View>
-          
-          <Text style={styles.popupDescription}>
-            ユーザーIDを入力してフレンドを検索します。
-          </Text>
-          
+        {/* titleやmessageはPopup側が描画してくれるので、ここには入力欄とボタンだけ置く */}
+        <View style={styles.popupFormContainer}>
           <TextInput
             style={styles.input}
             placeholder="ユーザーID (例: user_1234)"
@@ -95,19 +86,16 @@ export default function FriendScreen() {
           />
           
           <View style={styles.popupActionRow}>
-            {/* QRコード読み取りボタン */}
             <TouchableOpacity style={styles.qrButton}>
               <Ionicons name="qr-code-outline" size={24} color="#666" />
               <Text style={styles.qrButtonText}>QR読取</Text>
             </TouchableOpacity>
 
-            {/* 検索ボタン（文字が入力されていない時は薄くする） */}
             <TouchableOpacity 
               style={[styles.searchButton, !searchId && styles.searchButtonDisabled]}
               disabled={!searchId}
               onPress={() => {
                 console.log('検索実行:', searchId);
-                // TODO: ここに検索APIを呼ぶ処理を追加
               }}
             >
               <Text style={styles.searchButtonText}>検索</Text>
@@ -115,6 +103,8 @@ export default function FriendScreen() {
           </View>
         </View>
       </Popup>
+
+      <Footer />
     </SafeAreaView>
   );
 }
@@ -129,6 +119,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 16,
+    paddingBottom: 100, // フッターに隠れないように余白を追加
   },
   friendCard: {
     flexDirection: 'row',
@@ -137,12 +128,10 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
     marginBottom: 12,
-    // iOS用の影
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
-    // Android用の影
     elevation: 2,
   },
   friendInfo: {
@@ -172,29 +161,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#999',
   },
-  // --- ポップアップ内のスタイル ---
-  popupContent: {
-    padding: 24,
-  },
-  popupHeader: {
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  popupTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  popupDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-    lineHeight: 20,
+  
+  // --- ポップアップの中身専用のスタイル ---
+  popupFormContainer: {
+    width: '100%',
+    paddingHorizontal: 10,
+    marginTop: 20, // メッセージと入力欄の間を開ける
   },
   input: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#FFFFFF', // ポップアップの背景(緑)に対して目立つように白に
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: '#CCC',
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
@@ -212,8 +189,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
-    backgroundColor: '#F0F0F0',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DDD',
     gap: 8,
   },
   qrButtonText: {
