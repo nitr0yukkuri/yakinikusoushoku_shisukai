@@ -20,8 +20,8 @@ import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
 import { useProfile } from '../contexts/profile-context';
 import { getProfileImageSignature } from '../utils/profile-image';
-
 import MeetupSettingForm from '../components/meetupSettingForm';
+import { FriendPanel } from '../components/FriendPanel'; // ★ここを追加：新しく作ったFriendPanelを読み込む
 
 const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲーム', 'ジム'];
 
@@ -29,12 +29,17 @@ export default function HomeScreen() {
   const router = useRouter();
   const { profile, avatarUrl, logout } = useProfile();
 
+  // 各種ポップアップの表示・非表示を管理するState
   const [isPopupVisible, setPopupVisible] = useState(false);
   const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
   const [isSettingsVisible, setSettingsVisible] = useState(false);
   const [isSystemVisible, setSystemVisible] = useState(false);
   const [isPastimeVisible, setPastimeVisible] = useState(false);
   const [isCalendarPopupVisible, setCalendarPopupVisible] = useState(false);
+  const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
+  
+  // ★ここを追加：フレンドポップアップ用のState
+  const [isFriendPopupVisible, setFriendPopupVisible] = useState(false);
 
   const [selectedPastimes, setSelectedPastimes] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState('');
@@ -57,8 +62,6 @@ export default function HomeScreen() {
       [day.dateString]: { selected: true, selectedColor: '#2330df' },
     });
   };
-
-  const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -95,6 +98,7 @@ export default function HomeScreen() {
 
           <View style={styles.mainContent} pointerEvents="none" />
 
+          {/* 通知ポップアップ */}
           <Popup
             visible={isPopupVisible}
             onClose={() => setPopupVisible(false)}
@@ -102,6 +106,18 @@ export default function HomeScreen() {
             message="新着の通知はありません。"
           />
 
+          {/* ★ここを追加：フレンド画面のポップアップ */}
+          <Popup
+            visible={isFriendPopupVisible}
+            onClose={() => setFriendPopupVisible(false)}
+            title="フレンド"
+            icon="people-outline"
+          >
+            {/* 新しく作ってくれたFriendPanelをここに表示 */}
+            <FriendPanel />
+          </Popup>
+
+          {/* プロフィール設定ポップアップ */}
           <Popup
             visible={isProfilePopupVisible}
             onClose={() => setProfilePopupVisible(false)}
@@ -114,6 +130,7 @@ export default function HomeScreen() {
             />
           </Popup>
 
+          {/* カレンダーポップアップ */}
           <Popup
             visible={isCalendarPopupVisible}
             onClose={() => setCalendarPopupVisible(false)}
@@ -129,29 +146,30 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.selectButton}
               onPress={() => {
-                setCalendarPopupVisible(false); // カレンダーを閉じる
-                setMeetupSettingVisible(true);  // 待ち合わせ設定を開く！
+                setCalendarPopupVisible(false);
+                setMeetupSettingVisible(true);
               }}
             >
               <Text style={styles.selectButtonText}>選択</Text>
             </TouchableOpacity>
           </Popup>
+
+          {/* 待ち合わせ設定ポップアップ */}
           <Popup
             visible={isMeetupSettingVisible}
             onClose={() => setMeetupSettingVisible(false)}
             title="待ち合わせ詳細設定"
             icon="location-outline"
           >
-            {/* さっき作った別ファイルの部品をここで呼び出す */}
             <MeetupSettingForm 
               onSave={(data: any) => {
                 console.log("保存されたデータ:", data);
-                setMeetupSettingVisible(false); // 保存したら閉じる
+                setMeetupSettingVisible(false);
               }} 
             />
-
           </Popup>
 
+          {/* 設定ポップアップ */}
           <Popup
             visible={isSettingsVisible}
             onClose={() => setSettingsVisible(false)}
@@ -164,6 +182,7 @@ export default function HomeScreen() {
             />
           </Popup>
 
+          {/* システム設定ポップアップ（右からスライド） */}
           <Popup
             visible={isSystemVisible}
             onClose={() => setSystemVisible(false)}
@@ -188,6 +207,7 @@ export default function HomeScreen() {
             </View>
           </Popup>
 
+          {/* 好きな暇つぶしポップアップ（右からスライド） */}
           <Popup
             visible={isPastimeVisible}
             onClose={() => setPastimeVisible(false)}
@@ -223,8 +243,10 @@ export default function HomeScreen() {
           </Popup>
         </View>
 
+        {/* 画面下のフッター */}
         <View style={styles.footerWrapper}>
           <Footer
+            onPressFriend={() => setFriendPopupVisible(true)} // ★ここを変更：フレンドボタンを押したらポップアップを開く
             onPressNotification={() => setPopupVisible(true)}
             onPressCalendar={() => setCalendarPopupVisible(true)}
             onPressSettings={() => setSettingsVisible(true)}
