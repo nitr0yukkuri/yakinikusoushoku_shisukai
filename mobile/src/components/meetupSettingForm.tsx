@@ -201,7 +201,8 @@ const styles = StyleSheet.create({
   
   // ▼ 追加：地図の仮置き用のスタイル
   mapWindow: {
-    height: 220, // 四角の高さを指定
+    width: '100%',     // 追加：横幅を100%にする
+    aspectRatio: 1,    // 変更：height: 220 を消して、縦横比1:1の正方形に！
     backgroundColor: '#ffffff', // 白い背景
     borderWidth: 1,
     borderColor: '#ccc', // 枠線を少しグレーに

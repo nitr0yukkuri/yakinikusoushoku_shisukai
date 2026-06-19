@@ -51,15 +51,23 @@ export default function HomeScreen() {
     router.replace('/');
   };
 
-  const handleDayPress = (day: any) => {
-    setSelectedDate(day.dateString);
-    setMarkedDates({
-      [day.dateString]: { selected: true, selectedColor: '#2330df' },
-    });
+  const handleDayPress = (dateString: string) => {
+  setSelectedDate(dateString);
+  // markedDatesはdayComponentに任せたので削除
   };
 
-  const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
+  // 仮のスケジュールデータ（後でバックエンドから取得する想定）
+  const [scheduleData, setScheduleData] = useState<Record<string, { id: string; title: string }[]>>({
+    '2026-06-20': [{ id: '1', title: 'デスゲーム' }, { id: '2', title: 'ボーリング調査' }],
+    '2026-06-23': [{ id: '3', title: '巨大隕石衝突' }],
+  });
 
+  // 選択した日付の予定を取得
+  const selectedEvents = selectedDate ? scheduleData[selectedDate] || [] : [];
+  const hasEvents = selectedEvents.length > 0;
+
+  const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
+  
   return (
     <View style={styles.container}>
       <AppMap
@@ -114,42 +122,73 @@ export default function HomeScreen() {
             />
           </Popup>
 
+          {/* ----- ① カレンダーポップアップ ----- */}
           <Popup
             visible={isCalendarPopupVisible}
             onClose={() => setCalendarPopupVisible(false)}
-            title="日付を選択"
-            icon="calendar-outline"
+            title="スケジュール"
+            icon="calendar-outline" 
           >
             <CalendarView
               selectedDate={selectedDate}
               onDayPress={handleDayPress}
-              markedDates={markedDates}
+              scheduleData={scheduleData} 
             />
 
-            <TouchableOpacity
-              style={styles.selectButton}
-              onPress={() => {
-                setCalendarPopupVisible(false); // カレンダーを閉じる
-                setMeetupSettingVisible(true);  // 待ち合わせ設定を開く！
-              }}
-            >
-              <Text style={styles.selectButtonText}>選択</Text>
-            </TouchableOpacity>
+            <View style={{ width: '100%', alignItems: 'center', marginTop: 10 }}>
+              {selectedDate ? (
+                <>
+                  {hasEvents ? (
+                    <View style={{ flexDirection: 'row', gap: 15, width: '90%', justifyContent: 'center' }}>
+                      <TouchableOpacity 
+                        style={[styles.selectButton, { flex: 1, backgroundColor: '#2330df' }]}
+                        // ★ここを変更：カレンダーは閉じず、直接設定画面を開く！
+                        onPress={() => setMeetupSettingVisible(true)}
+                      >
+                        <Text style={styles.selectButtonText}>予定を追加</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        style={[styles.selectButton, { flex: 1, backgroundColor: '#4d6048' }]} 
+                        // ★ここを変更：カレンダーは閉じず、直接設定画面を開く！
+                        onPress={() => setMeetupSettingVisible(true)}
+                      >
+                        <Text style={styles.selectButtonText}>編集</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity 
+                      style={[styles.selectButton, { width: '80%' }]}
+                      // ★ここを変更：カレンダーは閉じず、直接設定画面を開く！
+                      onPress={() => setMeetupSettingVisible(true)}
+                    >
+                      <Text style={styles.selectButtonText}>予定を追加</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <Text style={{ color: '#888', marginTop: 15 }}>日付を選択してください</Text>
+              )}
+            </View>
           </Popup>
+
+
+          {/* ----- ② 待ち合わせ設定ポップアップ（上に重なる） ----- */}
           <Popup
             visible={isMeetupSettingVisible}
-            onClose={() => setMeetupSettingVisible(false)}
+            onClose={() => setMeetupSettingVisible(false)} // 戻るボタンや閉じる操作でここが呼ばれる
             title="待ち合わせ詳細設定"
             icon="location-outline"
+            // ★ここを追加：右からスライドインし、戻るボタンを表示する！
+            slideDirection="right"
+            showBackButton={true} 
           >
-            {/* さっき作った別ファイルの部品をここで呼び出す */}
             <MeetupSettingForm 
               onSave={(data: any) => {
                 console.log("保存されたデータ:", data);
-                setMeetupSettingVisible(false); // 保存したら閉じる
+                setMeetupSettingVisible(false); 
               }} 
             />
-
           </Popup>
 
           <Popup
