@@ -5,12 +5,14 @@ import { Ionicons } from '@expo/vector-icons';
 interface FooterProps {
   onPressNotification?: () => void;
   onPressCalendar?: () => void;
+  onPressSpot?: () => void;
   onPressSettings?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   onPressNotification,
   onPressCalendar,
+  onPressSpot,
   onPressSettings,
 }) => {
   return (
@@ -32,7 +34,7 @@ export const Footer: React.FC<FooterProps> = ({
       </TouchableOpacity>
 
       {/* 3. 暇つぶしスポット */}
-      <TouchableOpacity style={styles.tab}>
+      <TouchableOpacity style={styles.tab} onPress={onPressSpot}>
         <View style={styles.iconContainer}>
           <Ionicons
             name="cafe-outline"

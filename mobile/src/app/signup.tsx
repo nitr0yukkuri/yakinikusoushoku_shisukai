@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -25,18 +25,30 @@ export default function SignUpScreen() {
   const [userName, setUserName] = useState(profile?.name || '');
   const [iconUri, setIconUri] = useState<string | null>(avatarUrl);
   const iconUriRef = useRef<string | null>(avatarUrl);
+  const hasNavigatedRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!profile?.userId || hasNavigatedRef.current) return;
+    hasNavigatedRef.current = true;
+    router.replace('/home');
+  }, [profile?.userId, router]);
 
   const handleSignUp = async () => {
     try {
       setIsSubmitting(true);
+      const trimmedUserId = userId.trim();
+      const trimmedUserName = userName.trim();
       await saveProfile({
-        userId,
-        userName,
+        userId: trimmedUserId,
+        userName: trimmedUserName,
         profileImage: iconUriRef.current ?? iconUri ?? avatarUrl ?? profile?.profileImage ?? '',
         bio: profile?.bio || '',
       });
-      router.replace('/home');
+      if (!hasNavigatedRef.current) {
+        hasNavigatedRef.current = true;
+        router.replace('/home');
+      }
     } catch (error) {
       Alert.alert('エラー', error instanceof Error ? error.message : 'プロフィールの保存に失敗しました。');
     } finally {

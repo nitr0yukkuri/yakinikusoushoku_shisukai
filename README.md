@@ -136,7 +136,7 @@ psql $DATABASE_URL -f migrations/0002_friends.sql
 psql $DATABASE_URL -f migrations/0003_meetups.sql
 
 # サーバー起動
-go run main.go
+go run .
 ```
 
 ### 4. フロントエンドの起動

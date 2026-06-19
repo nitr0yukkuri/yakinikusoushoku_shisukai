@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Image,
-  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -15,6 +14,7 @@ import { AppMap } from '../components/AppMap';
 import { CalendarView } from '../components/CalendarView';
 import { Footer } from '../components/Footer';
 import { Popup } from '../components/Popup';
+import PastimeSpotPanel from '../components/PastimeSpotPanel';
 import ProfileEditSection from '../components/ProfileEditSection';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
@@ -35,6 +35,7 @@ export default function HomeScreen() {
   const [isSystemVisible, setSystemVisible] = useState(false);
   const [isPastimeVisible, setPastimeVisible] = useState(false);
   const [isCalendarPopupVisible, setCalendarPopupVisible] = useState(false);
+  const [isSpotPopupVisible, setSpotPopupVisible] = useState(false);
 
   const [selectedPastimes, setSelectedPastimes] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState('');
@@ -166,6 +167,15 @@ export default function HomeScreen() {
           </Popup>
 
           <Popup
+            visible={isSpotPopupVisible}
+            onClose={() => setSpotPopupVisible(false)}
+            title="暇つぶしスポット"
+            icon="cafe-outline"
+          >
+            <PastimeSpotPanel />
+          </Popup>
+
+          <Popup
             visible={isSystemVisible}
             onClose={() => setSystemVisible(false)}
             title="システム設定"
@@ -175,11 +185,10 @@ export default function HomeScreen() {
           >
             <View style={styles.popupBody}>
               <Text style={styles.popupLabel}>メールアドレス</Text>
-              <TextInput
-                style={styles.emailInput}
-                value={profile?.email || ''}
-                editable={false}
-              />
+              <View style={styles.emailDisplay}>
+                <Ionicons name="lock-closed-outline" size={16} color="#6b706b" />
+                <Text style={styles.emailText} numberOfLines={1}>{profile?.email || ''}</Text>
+              </View>
 
               <Text style={styles.deleteTitle}>アカウントを削除</Text>
               <TouchableOpacity style={styles.deleteButton} onPress={handleLogout}>
@@ -228,6 +237,7 @@ export default function HomeScreen() {
           <Footer
             onPressNotification={() => setPopupVisible(true)}
             onPressCalendar={() => setCalendarPopupVisible(true)}
+            onPressSpot={() => setSpotPopupVisible(true)}
             onPressSettings={() => setSettingsVisible(true)}
           />
         </View>
@@ -312,15 +322,22 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginBottom: 8,
   },
-  emailInput: {
+  emailDisplay: {
     width: '100%',
     height: 38,
     borderWidth: 1,
-    borderColor: '#4d6048',
-    backgroundColor: '#f6fff1',
+    borderColor: '#b7bdb7',
+    backgroundColor: '#e6e9e6',
     paddingHorizontal: 10,
-    color: '#1f1f1f',
     marginBottom: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emailText: {
+    color: '#6b706b',
+    fontSize: 14,
+    flex: 1,
   },
   deleteTitle: {
     fontSize: 18,

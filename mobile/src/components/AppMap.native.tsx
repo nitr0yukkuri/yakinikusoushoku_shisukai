@@ -27,6 +27,7 @@ type AppMapProps = {
     longitude: number;
   } | null;
   locationQuery?: string;
+  onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
 };
 
 interface UserLocation {
@@ -48,6 +49,7 @@ export const AppMap = ({
   profileImage,
   selectedLocation,
   locationQuery,
+  onLocationSelect,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -61,6 +63,7 @@ export const AppMap = ({
   const mapRef = useRef<MapView | null>(null);
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
+  const hasCenteredOnCurrentLocationRef = useRef(false);
 
   useEffect(() => {
     profileRef.current = { userName, profileImage };
@@ -230,6 +233,17 @@ export const AppMap = ({
   }, [isInitialized, selectedLocation]);
 
   useEffect(() => {
+    if (!myLocation || !isInitialized || selectedLocation || hasCenteredOnCurrentLocationRef.current) return;
+    hasCenteredOnCurrentLocationRef.current = true;
+    mapRef.current?.animateToRegion({
+      latitude: myLocation.coords.latitude,
+      longitude: myLocation.coords.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+    }, 300);
+  }, [isInitialized, myLocation, selectedLocation]);
+
+  useEffect(() => {
     const query = locationQuery?.trim();
     if (!query || selectedLocation || !isInitialized) return;
 
@@ -282,6 +296,7 @@ export const AppMap = ({
       } : INITIAL_REGION}
       showsUserLocation={false}
       showsMyLocationButton={true}
+      onPress={(event) => onLocationSelect?.(event.nativeEvent.coordinate)}
     >
       {myLocation && (
         <Marker
@@ -294,7 +309,7 @@ export const AppMap = ({
           title={userName}
           tracksViewChanges={Boolean(profileImage)}
         >
-          <View style={styles.markerBorder}>
+          <View style={[styles.markerBorder, styles.currentMarkerBorder]}>
             <ProfileAvatar
               key={selfMarkerImageKey}
               name={userName}
@@ -362,6 +377,10 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
     overflow: 'hidden',
+  },
+  currentMarkerBorder: {
+    borderWidth: 3,
+    borderColor: '#000000',
   },
   avatar: {
     width: 38,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { AppMap } from '../components/AppMap';
@@ -101,12 +101,11 @@ export default function SettingsScreen() {
             showBackButton
           >
             <View style={styles.popupBody}>
-              <Text style={styles.popupLabel}>メールアドレスの変更</Text>
-              <TextInput
-                style={styles.emailInput}
-                value={profile?.email || ''}
-                editable={false}
-              />
+              <Text style={styles.popupLabel}>メールアドレス</Text>
+              <View style={styles.emailDisplay}>
+                <Ionicons name="lock-closed-outline" size={16} color="#6b706b" />
+                <Text style={styles.emailText} numberOfLines={1}>{profile?.email || ''}</Text>
+              </View>
 
               <Text style={styles.deleteTitle}>アカウントを削除</Text>
               <TouchableOpacity style={styles.deleteButton} onPress={handleLogout}>
@@ -254,15 +253,22 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginBottom: 8,
   },
-  emailInput: {
+  emailDisplay: {
     width: '100%',
     height: 38,
     borderWidth: 1,
-    borderColor: '#4d6048',
-    backgroundColor: '#f6fff1',
+    borderColor: '#b7bdb7',
+    backgroundColor: '#e6e9e6',
     paddingHorizontal: 10,
-    color: '#1f1f1f',
     marginBottom: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emailText: {
+    color: '#6b706b',
+    fontSize: 14,
+    flex: 1,
   },
   deleteTitle: {
     fontSize: 18,
