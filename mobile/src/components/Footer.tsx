@@ -1,26 +1,24 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router'; // ★ここを追加：画面移動のための機能
 
 interface FooterProps {
+  onPressFriend?: () => void;      // ★ここを変更！
   onPressNotification?: () => void;
   onPressCalendar?: () => void;
   onPressSettings?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
+  onPressFriend,
   onPressNotification,
   onPressCalendar,
   onPressSettings,
 }) => {
-  const router = useRouter(); // ★ここを追加：routerを使えるようにする
-
   return (
     <View style={styles.footerContainer}>
       {/* 1. フレンド */}
-      {/* ★ここを追加：onPressで '/friend' に画面移動するよう設定 */}
-      <TouchableOpacity style={styles.tab} onPress={() => router.push('/friend')}>
+      <TouchableOpacity style={styles.tab} onPress={onPressFriend}>
         <View style={styles.iconContainer}>
           <Ionicons name="person-add-outline" size={26} color="#515151" />
         </View>
