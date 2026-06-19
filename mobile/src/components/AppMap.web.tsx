@@ -16,6 +16,7 @@ const markerIconVersions = new WeakMap<object, string>();
 type AppMapProps = {
   style?: StyleProp<ViewStyle>;
   roomId?: string;
+  wsTicket?: string;
   userId?: string;
   userName?: string;
   profileImage?: string;
@@ -163,6 +164,7 @@ const loadGoogleMapsScript = () => {
 export const AppMap = ({
   style,
   roomId = 'global',
+  wsTicket,
   userId: propUserId,
   userName: propUserName,
   profileImage,
@@ -208,7 +210,8 @@ export const AppMap = ({
   }, [profileImage, userId, userName]);
 
   useEffect(() => {
-    const ws = new WebSocket(`${WS_URL}?room=${roomId}`);
+    if (!wsTicket) return;
+    const ws = new WebSocket(`${WS_URL}?ticket=${encodeURIComponent(wsTicket)}`);
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
@@ -264,7 +267,7 @@ export const AppMap = ({
       otherMarkersRef.current = {};
       markerProfileVersionsRef.current = {};
     };
-  }, [roomId, userId]);
+  }, [roomId, userId, wsTicket]);
 
   const moveSelectedMarker = (position: { lat: number; lng: number }) => {
     const browserWindow = window as any;

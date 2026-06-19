@@ -4,15 +4,18 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-nativ
 import * as Location from 'expo-location';
 import { AppMap } from './AppMap';
 import { useProfile } from '../contexts/profile-context';
+import { getApiUrl } from '../utils/api-url';
 
 export interface MeetupData {
-  time: string;
-  location: string;
+  meetupId: number;
+  scheduledAt: string;
+  placeName: string;
   selectedFriends: string[];
 }
 
 interface Props {
   onSave: (data: MeetupData) => void;
+  selectedDate: string;
 }
 
 type MapCoordinate = {
@@ -20,58 +23,41 @@ type MapCoordinate = {
   longitude: number;
 };
 
-// フレンドのダミーデータ
-const DUMMY_FRIENDS = [
-  { id: '1', name: '太郎' },
-  { id: '2', name: '花子' },
-  { id: '3', name: '次郎' },
-  { id: '4', name: 'a郎' },
-  { id: '5', name: 'b郎' },
-  { id: '6', name: 'c郎' },
-  { id: '7', name: 'd郎' },
-  { id: '8', name: 'emiyasi郎' },
-//   { id: '9', name: 'f郎' },
-//   { id: '10', name: 'gj郎' },
-//   { id: '11', name: 'h郎' },
-//   { id: '12', name: 'i郎' },
-//   { id: '13', name: 'j郎' },
-//   { id: '14', name: 'k郎' },
-//   { id: '15', name: 'l郎' },
-//   { id: '16', name: 'm郎' },
-//   { id: '17', name: 'n郎' },
-//   { id: '18', name: 'o郎' },
-//   { id: '19', name: 'p郎' },
-//   { id: '20', name: 'q郎' },
-//   { id: '21', name: 'r郎' },
-//   { id: '22', name: 's郎' },
-//   { id: '23', name: 't郎' },
-//   { id: '24', name: 'u郎' },
-//   { id: '25', name: 'v郎' },
-//   { id: '26', name: 'w郎' },
-//   { id: '27', name: 'x郎' },
-//   { id: '28', name: 'y郎' },
-//   { id: '29', name: 'z郎' },
-//   { id: '30', name: 'い郎はにほへと' },
-];
+type Friend = { userId: string; name: string; profileImage: string };
 
-export default function MeetupSettingForm({ onSave }: Props) {
-  const { profile, avatarUrl } = useProfile();
+const apiUrl = getApiUrl();
+
+export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
+  const { profile, avatarUrl, token } = useProfile();
   const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<MapCoordinate | null>(null);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friendSearch, setFriendSearch] = useState('');
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [saveError, setSaveError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const friendSearchQuery = friendSearch.trim().toLowerCase();
   const filteredFriends = friendSearchQuery
-    ? DUMMY_FRIENDS.filter((friend) => friend.name.toLowerCase().includes(friendSearchQuery))
+    ? friends.filter((friend) => friend.name.toLowerCase().includes(friendSearchQuery) || friend.userId.toLowerCase().includes(friendSearchQuery))
     : [];
-  const selectedFriendItems = DUMMY_FRIENDS.filter((friend) => selectedFriends.includes(friend.id));
+  const selectedFriendItems = friends.filter((friend) => selectedFriends.includes(friend.userId));
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${apiUrl}/friends`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'フレンドを取得できませんでした');
+        setFriends(body.friends || []);
+      })
+      .catch((error) => setSaveError(error.message));
+  }, [token]);
 
   useEffect(() => {
     const query = location.trim();
     if (!query) {
-      setSelectedLocation(null);
       return;
     }
 
@@ -93,17 +79,61 @@ export default function MeetupSettingForm({ onSave }: Props) {
     return () => clearTimeout(timer);
   }, [location]);
 
-  const toggleFriend = (id: string) => {
-    if (selectedFriends.includes(id)) {
-      setSelectedFriends(selectedFriends.filter((fId) => fId !== id));
+  const handleLocationChange = (value: string) => {
+    setLocation(value);
+    if (!value.trim()) setSelectedLocation(null);
+  };
+
+  const toggleFriend = (userId: string) => {
+    if (selectedFriends.includes(userId)) {
+      setSelectedFriends(selectedFriends.filter((fId) => fId !== userId));
     } else {
-      setSelectedFriends([...selectedFriends, id]);
+      setSelectedFriends([...selectedFriends, userId]);
       setFriendSearch('');
     }
   };
 
-  const handleSave = () => {
-    onSave({ time, location, selectedFriends });
+  const handleSave = async () => {
+    setSaveError('');
+    if (!token) {
+      setSaveError('ログインが必要です');
+      return;
+    }
+    if (!selectedDate || !/^\d{2}:\d{2}$/.test(time) || !location.trim() || !selectedLocation) {
+      setSaveError('日付・時刻・待ち合わせ場所を入力してください');
+      return;
+    }
+    const scheduledAt = new Date(`${selectedDate}T${time}:00`);
+    if (Number.isNaN(scheduledAt.getTime())) {
+      setSaveError('日時の形式が正しくありません');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${apiUrl}/meetups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          scheduledAt: scheduledAt.toISOString(),
+          placeName: location.trim(),
+          latitude: selectedLocation.latitude,
+          longitude: selectedLocation.longitude,
+          friendUserIds: selectedFriends,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || '待ち合わせを保存できませんでした');
+      onSave({
+        meetupId: body.meetup.id,
+        scheduledAt: body.meetup.scheduledAt,
+        placeName: body.meetup.placeName,
+        selectedFriends,
+      });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : '待ち合わせを保存できませんでした');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -122,9 +152,9 @@ export default function MeetupSettingForm({ onSave }: Props) {
       <View style={styles.friendInputBox}>
         {selectedFriendItems.map((friend) => (
           <TouchableOpacity
-            key={friend.id}
+            key={friend.userId}
             style={styles.selectedFriendItem}
-            onPress={() => toggleFriend(friend.id)}
+            onPress={() => toggleFriend(friend.userId)}
             activeOpacity={0.7}
           >
             <Text style={styles.selectedFriendText}>✓ {friend.name}</Text>
@@ -142,9 +172,9 @@ export default function MeetupSettingForm({ onSave }: Props) {
         {filteredFriends.map((friend) => {
           return (
             <TouchableOpacity
-              key={friend.id}
+              key={friend.userId}
               style={styles.friendChip}
-              onPress={() => toggleFriend(friend.id)}
+              onPress={() => toggleFriend(friend.userId)}
             >
               <Text style={styles.friendText}>{friend.name}</Text>
             </TouchableOpacity>
@@ -161,7 +191,7 @@ export default function MeetupSettingForm({ onSave }: Props) {
         style={styles.input}
         placeholder="住所を入力"
         value={location}
-        onChangeText={setLocation}
+        onChangeText={handleLocationChange}
       />
 
       {/* 4. 地図 (仮の白い四角) */}
@@ -178,8 +208,9 @@ export default function MeetupSettingForm({ onSave }: Props) {
       </View>
 
       {/* 保存ボタン */}
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-        <Text style={styles.saveButtonText}>保存</Text>
+      {saveError ? <Text style={styles.errorText}>{saveError}</Text> : null}
+      <TouchableOpacity style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} onPress={handleSave} disabled={isSaving}>
+        <Text style={styles.saveButtonText}>{isSaving ? '保存中...' : '保存'}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -215,5 +246,7 @@ const styles = StyleSheet.create({
   },
   
   saveButton: { backgroundColor: '#007AFF', paddingVertical: 15, borderRadius: 25, alignItems: 'center', marginTop: 30 },
+  saveButtonDisabled: { opacity: 0.55 },
   saveButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  errorText: { color: '#b3261e', fontSize: 13, marginTop: 12 },
 });
