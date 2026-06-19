@@ -24,7 +24,7 @@ import (
 	"google.golang.org/api/idtoken"
 )
 
-var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+var upgrader = websocket.Upgrader{CheckOrigin: checkWebSocketOrigin}
 
 type googleAuthRequest struct {
 	IDToken string `json:"idToken"`
@@ -71,10 +71,12 @@ type appTokenClaims struct {
 
 // ====== WebSocket Hub の実装 ======
 type wsClient struct {
-	hub  *wsHub
-	conn *websocket.Conn
-	room string
-	send chan []byte
+	hub      *wsHub
+	conn     *websocket.Conn
+	room     string
+	userID   string
+	userName string
+	send     chan []byte
 }
 
 type wsHub struct {
@@ -98,6 +100,16 @@ type arrivalTimeMessage struct {
 	RemainingSeconds int64  `json:"remainingSeconds,omitempty"`
 	ArrivalAt        int64  `json:"arrivalAt,omitempty"`
 	Timestamp        int64  `json:"timestamp,omitempty"`
+}
+
+type locationUpdateMessage struct {
+	Type           string  `json:"type"`
+	UserID         string  `json:"userId"`
+	UserName       string  `json:"userName"`
+	ProfileVersion string  `json:"profileVersion,omitempty"`
+	Lat            float64 `json:"lat"`
+	Lng            float64 `json:"lng"`
+	Timestamp      int64   `json:"timestamp"`
 }
 
 func newWsHub() *wsHub {
@@ -267,46 +279,78 @@ func buildArrivalUpdate(userID string, arrivalAt time.Time, now time.Time) []byt
 	return body
 }
 
-func (c *wsClient) readPump(pool *pgxpool.Pool, ctx context.Context) {
+func (c *wsClient) readPump() {
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
 	}()
+	c.conn.SetReadLimit(4096)
+	_ = c.conn.SetReadDeadline(time.Now().Add(70 * time.Second))
+	c.conn.SetPongHandler(func(string) error {
+		return c.conn.SetReadDeadline(time.Now().Add(70 * time.Second))
+	})
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			break
 		}
 
-		var arrivalMessage arrivalTimeMessage
-		if err := json.Unmarshal(message, &arrivalMessage); err == nil {
-			switch arrivalMessage.Type {
-			case "ARRIVAL_TIME_SET":
-				c.hub.setArrival(c.room, arrivalMessage)
-				continue
-			case "ARRIVAL_TIME_CLEAR":
-				c.hub.clearArrival(c.room, arrivalMessage)
+		var envelope struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(message, &envelope); err != nil {
+			continue
+		}
+		switch envelope.Type {
+		case "LOCATION_UPDATE":
+			var location locationUpdateMessage
+			if err := json.Unmarshal(message, &location); err != nil ||
+				math.IsNaN(location.Lat) || math.IsNaN(location.Lng) ||
+				location.Lat < -90 || location.Lat > 90 || location.Lng < -180 || location.Lng > 180 {
 				continue
 			}
+			location.UserID = c.userID
+			location.UserName = c.userName
+			location.Timestamp = time.Now().UnixMilli()
+			body, err := json.Marshal(location)
+			if err == nil {
+				c.hub.broadcast <- broadcastMessage{room: c.room, data: body}
+			}
+		case "ARRIVAL_TIME_SET", "ARRIVAL_TIME_CLEAR":
+			var arrival arrivalTimeMessage
+			if err := json.Unmarshal(message, &arrival); err != nil {
+				continue
+			}
+			arrival.UserID = c.userID
+			if envelope.Type == "ARRIVAL_TIME_SET" {
+				c.hub.setArrival(c.room, arrival)
+			} else {
+				c.hub.clearArrival(c.room, arrival)
+			}
 		}
-
-		c.hub.broadcast <- broadcastMessage{room: c.room, data: message}
-
-		go func(msg string) {
-			_, _ = pool.Exec(ctx, "INSERT INTO messages (content) VALUES ($1)", msg)
-		}(string(message))
 	}
 }
 
 func (c *wsClient) writePump() {
 	defer c.conn.Close()
-	for message := range c.send {
-		w, err := c.conn.NextWriter(websocket.TextMessage)
-		if err != nil {
-			return
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case message, ok := <-c.send:
+			if !ok {
+				return
+			}
+			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				return
+			}
+		case <-ticker.C:
+			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
-		w.Write(message)
-		w.Close()
 	}
 }
 
@@ -332,14 +376,21 @@ func main() {
 	if err := pool.Ping(ctxPing); err != nil {
 		log.Fatalf("db ping failed: %v", err)
 	}
-	ctxSchema, cancelSchema := context.WithTimeout(ctx, 10*time.Second)
+	ctxSchema, cancelSchema := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelSchema()
 	if err := ensureAuthProfileSchema(ctxSchema, pool); err != nil {
 		log.Fatalf("auth profile schema failed: %v", err)
 	}
+	if err := ensureFriendSchema(ctxSchema, pool); err != nil {
+		log.Fatalf("friend schema failed: %v", err)
+	}
+	if err := ensureMeetupSchema(ctxSchema, pool); err != nil {
+		log.Fatalf("meetup schema failed: %v", err)
+	}
 
 	// Hubの起動
 	hub := newWsHub()
+	wsTickets := newWSTicketStore()
 	go hub.run()
 	go hub.runArrivalTicker()
 
@@ -351,12 +402,28 @@ func main() {
 	http.HandleFunc("/auth/google", withCORS(handleGoogleAuth(pool)))
 	http.HandleFunc("/auth/profile", withCORS(handleAuthProfile(pool)))
 	http.HandleFunc("/profiles", withCORS(handlePublicProfile(pool)))
+	http.HandleFunc("/friends", withCORS(handleFriends(pool)))
+	http.HandleFunc("/friends/search", withCORS(handleFriendSearch(pool)))
+	http.HandleFunc("/friends/requests", withCORS(handleFriendRequests(pool)))
+	http.HandleFunc("/friends/qr", withCORS(handleFriendQR(pool)))
+	http.HandleFunc("/meetups", withCORS(handleMeetups(pool)))
+	http.HandleFunc("/meetups/", withCORS(handleMeetupResource(pool)))
+	http.HandleFunc("/spots/", withCORS(handleSpots(pool)))
+	http.HandleFunc("/ws/tickets", withCORS(handleWSTickets(pool, wsTickets)))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		room := r.URL.Query().Get("room")
-		if room == "" {
-			room = "global"
+		ticket, ok := wsTickets.consume(strings.TrimSpace(r.URL.Query().Get("ticket")))
+		if !ok {
+			writeJSONError(w, http.StatusUnauthorized, "valid WebSocket ticket is required")
+			return
 		}
+		ctxAccess, cancelAccess := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancelAccess()
+		if err := requireAcceptedMeetupMember(ctxAccess, pool, ticket.UserNo, ticket.MeetupID); err != nil {
+			writeJSONError(w, http.StatusForbidden, "meetup access denied")
+			return
+		}
+		room := fmt.Sprintf("meetup:%d", ticket.MeetupID)
 
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -365,15 +432,14 @@ func main() {
 		}
 
 		client := &wsClient{
-			hub:  hub,
-			conn: conn,
-			room: room,
+			hub: hub, conn: conn, room: room,
+			userID: ticket.UserID, userName: ticket.UserName,
 			send: make(chan []byte, 256),
 		}
 		client.hub.register <- client
 
 		go client.writePump()
-		go client.readPump(pool, ctx)
+		go client.readPump()
 	})
 
 	port := os.Getenv("PORT")
@@ -387,9 +453,17 @@ func main() {
 
 func withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		if !originAllowed(origin) {
+			writeJSONError(w, http.StatusForbidden, "origin is not allowed")
+			return
+		}
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

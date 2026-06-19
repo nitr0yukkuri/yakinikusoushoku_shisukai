@@ -144,6 +144,7 @@ export default function HomeScreen() {
           >
             {/* さっき作った別ファイルの部品をここで呼び出す */}
             <MeetupSettingForm 
+              selectedDate={selectedDate}
               onSave={(data: any) => {
                 console.log("保存されたデータ:", data);
                 setMeetupSettingVisible(false); // 保存したら閉じる

@@ -18,6 +18,7 @@ const INITIAL_REGION: Region = {
 type AppMapProps = {
   style?: StyleProp<ViewStyle>;
   roomId?: string;
+  wsTicket?: string;
   userId?: string;
   userName?: string;
   profileImage?: string;
@@ -41,6 +42,7 @@ interface UserLocation {
 export const AppMap = ({
   style,
   roomId = 'global',
+  wsTicket,
   userId: propUserId,
   userName: propUserName,
   profileImage,
@@ -76,7 +78,8 @@ export const AppMap = ({
   }, [profileImage, userId, userName]);
 
   useEffect(() => {
-    const ws = new WebSocket(`${WS_URL}?room=${roomId}`);
+    if (!wsTicket) return;
+    const ws = new WebSocket(`${WS_URL}?ticket=${encodeURIComponent(wsTicket)}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -144,7 +147,7 @@ export const AppMap = ({
       ws.close();
       markerProfileVersionsRef.current = {};
     };
-  }, [roomId, userId]);
+  }, [roomId, userId, wsTicket]);
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
