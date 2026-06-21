@@ -13,37 +13,74 @@ import { useRouter } from 'expo-router';
 import { AppMap } from '../components/AppMap';
 import { CalendarView } from '../components/CalendarView';
 import { Footer } from '../components/Footer';
-import { Popup } from '../components/Popup';
+import { FriendPanel } from '../components/FriendPanel';
+import MeetupSettingForm from '../components/meetupSettingForm';
 import PastimeSpotPanel from '../components/PastimeSpotPanel';
+import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
 import { useProfile } from '../contexts/profile-context';
 import { getProfileImageSignature } from '../utils/profile-image';
 
-import MeetupSettingForm from '../components/meetupSettingForm';
+const pastimeOptions = [
+  'カフェ',
+  'カラオケ',
+  'ファミレス',
+  'ゲーム',
+  'ジム',
+];
 
-const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲーム', 'ジム'];
+const scheduleData: Record<
+  string,
+  { id: string; title: string }[]
+> = {
+  '2026-06-20': [
+    { id: '1', title: 'デスゲーム' },
+    { id: '2', title: 'ボーリング調査' },
+  ],
+  '2026-06-23': [
+    { id: '3', title: '巨大隕石衝突' },
+  ],
+};
 
 export default function HomeScreen() {
   const router = useRouter();
   const { profile, avatarUrl, logout } = useProfile();
 
   const [isPopupVisible, setPopupVisible] = useState(false);
-  const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
-  const [isSettingsVisible, setSettingsVisible] = useState(false);
+  const [isProfilePopupVisible, setProfilePopupVisible] =
+    useState(false);
+  const [isSettingsVisible, setSettingsVisible] =
+    useState(false);
   const [isSystemVisible, setSystemVisible] = useState(false);
-  const [isPastimeVisible, setPastimeVisible] = useState(false);
-  const [isCalendarPopupVisible, setCalendarPopupVisible] = useState(false);
-  const [isSpotPopupVisible, setSpotPopupVisible] = useState(false);
+  const [isPastimeVisible, setPastimeVisible] =
+    useState(false);
+  const [isCalendarPopupVisible, setCalendarPopupVisible] =
+    useState(false);
+  const [isMeetupSettingVisible, setMeetupSettingVisible] =
+    useState(false);
+  const [isFriendPopupVisible, setFriendPopupVisible] =
+    useState(false);
+  const [isSpotPopupVisible, setSpotPopupVisible] =
+    useState(false);
 
-  const [selectedPastimes, setSelectedPastimes] = useState<string[]>([]);
+  const [selectedPastimes, setSelectedPastimes] = useState<
+    string[]
+  >([]);
   const [selectedDate, setSelectedDate] = useState('');
-  const [markedDates, setMarkedDates] = useState({});
+
+  const selectedEvents = selectedDate
+    ? scheduleData[selectedDate] || []
+    : [];
+
+  const hasEvents = selectedEvents.length > 0;
 
   const togglePastime = (option: string) => {
-    setSelectedPastimes((prev) =>
-      prev.includes(option) ? prev.filter((p) => p !== option) : [...prev, option],
+    setSelectedPastimes((previous) =>
+      previous.includes(option)
+        ? previous.filter((item) => item !== option)
+        : [...previous, option],
     );
   };
 
@@ -53,22 +90,9 @@ export default function HomeScreen() {
   };
 
   const handleDayPress = (dateString: string) => {
-  setSelectedDate(dateString);
-  // markedDatesはdayComponentに任せたので削除
+    setSelectedDate(dateString);
   };
 
-  // 仮のスケジュールデータ（後でバックエンドから取得する想定）
-  const [scheduleData, setScheduleData] = useState<Record<string, { id: string; title: string }[]>>({
-    '2026-06-20': [{ id: '1', title: 'デスゲーム' }, { id: '2', title: 'ボーリング調査' }],
-    '2026-06-23': [{ id: '3', title: '巨大隕石衝突' }],
-  });
-
-  // 選択した日付の予定を取得
-  const selectedEvents = selectedDate ? scheduleData[selectedDate] || [] : [];
-  const hasEvents = selectedEvents.length > 0;
-
-  const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
-  
   return (
     <View style={styles.container}>
       <AppMap
@@ -78,8 +102,14 @@ export default function HomeScreen() {
         profileImage={avatarUrl || undefined}
       />
 
-      <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
-        <View style={styles.contentWrapper} pointerEvents="box-none">
+      <SafeAreaView
+        style={styles.safeArea}
+        pointerEvents="box-none"
+      >
+        <View
+          style={styles.contentWrapper}
+          pointerEvents="box-none"
+        >
           <View style={styles.header}>
             <Image
               source={require('../../assets/images/matsunya-logo.png')}
@@ -93,7 +123,9 @@ export default function HomeScreen() {
               activeOpacity={0.7}
             >
               <ProfileAvatar
-                key={`${profile?.name ?? ''}:${getProfileImageSignature(avatarUrl)}`}
+                key={`${profile?.name ?? ''}:${getProfileImageSignature(
+                  avatarUrl,
+                )}`}
                 name={profile?.name}
                 profileImage={avatarUrl}
                 size={50}
@@ -102,7 +134,10 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.mainContent} pointerEvents="none" />
+          <View
+            style={styles.mainContent}
+            pointerEvents="none"
+          />
 
           <Popup
             visible={isPopupVisible}
@@ -112,96 +147,111 @@ export default function HomeScreen() {
           />
 
           <Popup
+            visible={isFriendPopupVisible}
+            onClose={() => setFriendPopupVisible(false)}
+            title="フレンド"
+            icon="people-outline"
+          >
+            <FriendPanel />
+          </Popup>
+
+          <Popup
             visible={isProfilePopupVisible}
             onClose={() => setProfilePopupVisible(false)}
             title="プロフィール設定"
             icon="person-outline"
           >
             <ProfileEditSection
-              key={`${profile?.id ?? 'profile'}-${profile?.name ?? ''}-${profile?.bio ?? ''}-${getProfileImageSignature(avatarUrl)}`}
-              onSaveSuccess={() => setProfilePopupVisible(false)}
+              key={`${profile?.id ?? 'profile'}-${
+                profile?.name ?? ''
+              }-${profile?.bio ?? ''}-${getProfileImageSignature(
+                avatarUrl,
+              )}`}
+              onSaveSuccess={() =>
+                setProfilePopupVisible(false)
+              }
             />
           </Popup>
 
-          {/* ----- ① カレンダーポップアップ ----- */}
           <Popup
             visible={isCalendarPopupVisible}
             onClose={() => setCalendarPopupVisible(false)}
             title="スケジュール"
-            icon="calendar-outline" 
+            icon="calendar-outline"
           >
             <CalendarView
               selectedDate={selectedDate}
               onDayPress={handleDayPress}
-              scheduleData={scheduleData} 
+              scheduleData={scheduleData}
             />
 
-            <View style={{ width: '100%', alignItems: 'center', marginTop: 10 }}>
-              {selectedDate ? (
-                <>
-                  {hasEvents ? (
-                    <View style={{ flexDirection: 'row', gap: 15, width: '90%', justifyContent: 'center' }}>
-                      <TouchableOpacity 
-                        style={[styles.selectButton, { flex: 1, backgroundColor: '#2330df' }]}
-                        // ★ここを変更：カレンダーは閉じず、直接設定画面を開く！
-                        onPress={() => setMeetupSettingVisible(true)}
-                      >
-                        <Text style={styles.selectButtonText}>予定を追加</Text>
-                      </TouchableOpacity>
-                      
-                      <TouchableOpacity 
-                        style={[styles.selectButton, { flex: 1, backgroundColor: '#4d6048' }]} 
-                        // ★ここを変更：カレンダーは閉じず、直接設定画面を開く！
-                        onPress={() => setMeetupSettingVisible(true)}
-                      >
-                        <Text style={styles.selectButtonText}>編集</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <TouchableOpacity 
-                      style={[styles.selectButton, { width: '80%' }]}
-                      // ★ここを変更：カレンダーは閉じず、直接設定画面を開く！
-                      onPress={() => setMeetupSettingVisible(true)}
-                    >
-                      <Text style={styles.selectButtonText}>予定を追加</Text>
-                    </TouchableOpacity>
-                  )}
-                </>
+            <View style={styles.calendarActions}>
+              {!selectedDate ? (
+                <Text style={styles.noDateText}>
+                  日付を選択してください
+                </Text>
+              ) : hasEvents ? (
+                <View style={styles.calendarButtonRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.selectButton,
+                      styles.calendarRowButton,
+                    ]}
+                    onPress={() =>
+                      setMeetupSettingVisible(true)
+                    }
+                  >
+                    <Text style={styles.selectButtonText}>
+                      予定を追加
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.selectButton,
+                      styles.calendarRowButton,
+                      styles.editButton,
+                    ]}
+                    onPress={() =>
+                      setMeetupSettingVisible(true)
+                    }
+                  >
+                    <Text style={styles.selectButtonText}>
+                      編集
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               ) : (
-                <Text style={{ color: '#888', marginTop: 15 }}>日付を選択してください</Text>
+                <TouchableOpacity
+                  style={styles.selectButton}
+                  onPress={() =>
+                    setMeetupSettingVisible(true)
+                  }
+                >
+                  <Text style={styles.selectButtonText}>
+                    予定を追加
+                  </Text>
+                </TouchableOpacity>
               )}
             </View>
           </Popup>
 
-
-          {/* ----- ② 待ち合わせ設定ポップアップ（上に重なる） ----- */}
           <Popup
             visible={isMeetupSettingVisible}
-            onClose={() => setMeetupSettingVisible(false)} // 戻るボタンや閉じる操作でここが呼ばれる
+            onClose={() =>
+              setMeetupSettingVisible(false)
+            }
             title="待ち合わせ詳細設定"
             icon="location-outline"
-            // ★ここを追加：右からスライドインし、戻るボタンを表示する！
             slideDirection="right"
-            showBackButton={true} 
+            showBackButton
           >
-            <MeetupSettingForm 
+            <MeetupSettingForm
               selectedDate={selectedDate}
-              onSave={(data: any) => {
-                console.log("保存されたデータ:", data);
-                setMeetupSettingVisible(false); 
-              }} 
-            />
-          </Popup>
-
-          <Popup
-            visible={isSettingsVisible}
-            onClose={() => setSettingsVisible(false)}
-            title="設定"
-            icon="settings-outline"
-          >
-            <SettingsPanel
-              onOpenSystem={() => setSystemVisible(true)}
-              onOpenPastime={() => setPastimeVisible(true)}
+              onSave={(data) => {
+                console.log('保存されたデータ:', data);
+                setMeetupSettingVisible(false);
+              }}
             />
           </Popup>
 
@@ -215,6 +265,22 @@ export default function HomeScreen() {
           </Popup>
 
           <Popup
+            visible={isSettingsVisible}
+            onClose={() => setSettingsVisible(false)}
+            title="設定"
+            icon="settings-outline"
+          >
+            <SettingsPanel
+              onOpenSystem={() =>
+                setSystemVisible(true)
+              }
+              onOpenPastime={() =>
+                setPastimeVisible(true)
+              }
+            />
+          </Popup>
+
+          <Popup
             visible={isSystemVisible}
             onClose={() => setSystemVisible(false)}
             title="システム設定"
@@ -223,16 +289,40 @@ export default function HomeScreen() {
             showBackButton
           >
             <View style={styles.popupBody}>
-              <Text style={styles.popupLabel}>メールアドレス</Text>
+              <Text style={styles.popupLabel}>
+                メールアドレス
+              </Text>
+
               <View style={styles.emailDisplay}>
-                <Ionicons name="lock-closed-outline" size={16} color="#6b706b" />
-                <Text style={styles.emailText} numberOfLines={1}>{profile?.email || ''}</Text>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={16}
+                  color="#6b706b"
+                />
+                <Text
+                  style={styles.emailText}
+                  numberOfLines={1}
+                >
+                  {profile?.email || ''}
+                </Text>
               </View>
 
-              <Text style={styles.deleteTitle}>アカウントを削除</Text>
-              <TouchableOpacity style={styles.deleteButton} onPress={handleLogout}>
-                <Ionicons name="trash-outline" size={18} color="#b71c1c" />
-                <Text style={styles.deleteButtonText}>削除する</Text>
+              <Text style={styles.deleteTitle}>
+                アカウントを削除
+              </Text>
+
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={handleLogout}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color="#b71c1c"
+                />
+                <Text style={styles.deleteButtonText}>
+                  削除する
+                </Text>
               </TouchableOpacity>
             </View>
           </Popup>
@@ -247,7 +337,8 @@ export default function HomeScreen() {
           >
             <View style={styles.chipGrid}>
               {pastimeOptions.map((option) => {
-                const isSelected = selectedPastimes.includes(option);
+                const isSelected =
+                  selectedPastimes.includes(option);
 
                 return (
                   <TouchableOpacity
@@ -264,7 +355,9 @@ export default function HomeScreen() {
                         style={styles.checkIcon}
                       />
                     )}
-                    <Text style={styles.chipText}>{option}</Text>
+                    <Text style={styles.chipText}>
+                      {option}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -274,10 +367,21 @@ export default function HomeScreen() {
 
         <View style={styles.footerWrapper}>
           <Footer
-            onPressNotification={() => setPopupVisible(true)}
-            onPressCalendar={() => setCalendarPopupVisible(true)}
-            onPressSpot={() => setSpotPopupVisible(true)}
-            onPressSettings={() => setSettingsVisible(true)}
+            onPressFriend={() =>
+              setFriendPopupVisible(true)
+            }
+            onPressNotification={() =>
+              setPopupVisible(true)
+            }
+            onPressCalendar={() =>
+              setCalendarPopupVisible(true)
+            }
+            onPressSpot={() =>
+              setSpotPopupVisible(true)
+            }
+            onPressSettings={() =>
+              setSettingsVisible(true)
+            }
           />
         </View>
       </SafeAreaView>
@@ -320,12 +424,12 @@ const styles = StyleSheet.create({
     marginLeft: -35,
   },
   iconContainer: {
-    backgroundColor: '#ffffff',
     width: 54,
     height: 54,
     borderRadius: 30,
     borderWidth: 2,
     borderColor: '#515151',
+    backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -336,14 +440,36 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
   },
+  calendarActions: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  calendarButtonRow: {
+    width: '90%',
+    flexDirection: 'row',
+    gap: 15,
+    justifyContent: 'center',
+  },
+  calendarRowButton: {
+    flex: 1,
+    width: undefined,
+  },
+  editButton: {
+    backgroundColor: '#4d6048',
+  },
+  noDateText: {
+    color: '#888888',
+    marginTop: 15,
+  },
   selectButton: {
-    backgroundColor: '#2330df',
-    paddingVertical: 12,
     width: '80%',
     alignSelf: 'center',
+    alignItems: 'center',
+    backgroundColor: '#2330df',
+    paddingVertical: 12,
     borderRadius: 25,
     marginTop: 10,
-    alignItems: 'center',
   },
   selectButtonText: {
     color: '#ffffff',
@@ -388,9 +514,9 @@ const styles = StyleSheet.create({
     minWidth: 150,
     height: 46,
     borderRadius: 23,
-    backgroundColor: '#ffcdd2',
     borderWidth: 1,
     borderColor: '#e57373',
+    backgroundColor: '#ffcdd2',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
