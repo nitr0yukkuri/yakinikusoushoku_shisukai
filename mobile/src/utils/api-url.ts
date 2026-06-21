@@ -29,3 +29,20 @@ export const getApiUrl = () => {
     return configuredUrl;
   }
 };
+
+export const getWebSocketUrl = () => {
+  const configuredUrl = process.env.EXPO_PUBLIC_WS_URL;
+  if (configuredUrl && Platform.OS === 'web') return configuredUrl;
+
+  const apiUrl = getApiUrl();
+  try {
+    const url = new URL(configuredUrl || apiUrl);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.pathname = '/ws';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return configuredUrl || 'ws://localhost:8080/ws';
+  }
+};

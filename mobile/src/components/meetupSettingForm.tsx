@@ -24,6 +24,13 @@ type MapCoordinate = {
 };
 
 type Friend = { userId: string; name: string; profileImage: string };
+type Spot = {
+  placeId: string;
+  name: string;
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+};
 
 const apiUrl = getApiUrl();
 
@@ -32,6 +39,7 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
   const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<MapCoordinate | null>(null);
+  const [googlePlaceId, setGooglePlaceId] = useState('');
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friendSearch, setFriendSearch] = useState('');
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -58,7 +66,7 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
 
   useEffect(() => {
     const query = location.trim();
-    if (!query) {
+    if (!query || !token) {
       return;
     }
     if (mapSelectionRef.current) {
@@ -67,10 +75,20 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
     }
 
     const timer = setTimeout(() => {
-      Location.geocodeAsync(query)
-        .then((results) => {
-          const firstResult = results[0];
-          if (!firstResult) return;
+      fetch(`${apiUrl}/spots/search?q=${encodeURIComponent(query)}&limit=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then(async (response) => {
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || '待ち合わせ場所を検索できませんでした');
+          return (body.spots?.[0] || null) as Spot | null;
+        })
+        .then((firstResult) => {
+          if (!firstResult) {
+            setGooglePlaceId('');
+            return;
+          }
+          setGooglePlaceId(firstResult.placeId);
           setSelectedLocation({
             latitude: firstResult.latitude,
             longitude: firstResult.longitude,
@@ -82,16 +100,18 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [location]);
+  }, [location, token]);
 
   const handleLocationChange = (value: string) => {
     mapSelectionRef.current = false;
+    setGooglePlaceId('');
     setLocation(value);
     if (!value.trim()) setSelectedLocation(null);
   };
 
   const handleMapLocationSelect = async (coordinate: MapCoordinate, address?: string) => {
     setSelectedLocation(coordinate);
+    setGooglePlaceId('');
     mapSelectionRef.current = true;
     setLocation(address || `${coordinate.latitude.toFixed(6)}, ${coordinate.longitude.toFixed(6)}`);
     if (address) return;
@@ -143,6 +163,7 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
         body: JSON.stringify({
           scheduledAt: scheduledAt.toISOString(),
           placeName: location.trim(),
+          googlePlaceId,
           latitude: selectedLocation.latitude,
           longitude: selectedLocation.longitude,
           friendUserIds: selectedFriends,
