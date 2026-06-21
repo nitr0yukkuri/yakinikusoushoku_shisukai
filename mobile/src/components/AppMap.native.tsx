@@ -18,9 +18,16 @@ const INITIAL_REGION: Region = {
 type AppMapProps = {
   style?: StyleProp<ViewStyle>;
   roomId?: string;
+  wsTicket?: string;
   userId?: string;
   userName?: string;
   profileImage?: string;
+  selectedLocation?: {
+    latitude: number;
+    longitude: number;
+  } | null;
+  locationQuery?: string;
+  onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
 };
 
 interface UserLocation {
@@ -36,9 +43,13 @@ interface UserLocation {
 export const AppMap = ({
   style,
   roomId = 'global',
+  wsTicket,
   userId: propUserId,
   userName: propUserName,
   profileImage,
+  selectedLocation,
+  locationQuery,
+  onLocationSelect,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -49,8 +60,10 @@ export const AppMap = ({
   const [myLocation, setMyLocation] = useState<Location.LocationObject | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const mapRef = useRef<MapView | null>(null);
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
+  const hasCenteredOnCurrentLocationRef = useRef(false);
 
   useEffect(() => {
     profileRef.current = { userName, profileImage };
@@ -68,7 +81,8 @@ export const AppMap = ({
   }, [profileImage, userId, userName]);
 
   useEffect(() => {
-    const ws = new WebSocket(`${WS_URL}?room=${roomId}`);
+    if (!wsTicket) return;
+    const ws = new WebSocket(`${WS_URL}?ticket=${encodeURIComponent(wsTicket)}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -136,7 +150,7 @@ export const AppMap = ({
       ws.close();
       markerProfileVersionsRef.current = {};
     };
-  }, [roomId, userId]);
+  }, [roomId, userId, wsTicket]);
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
@@ -208,6 +222,51 @@ export const AppMap = ({
     };
   }, [userId]);
 
+  useEffect(() => {
+    if (!selectedLocation || !isInitialized) return;
+    mapRef.current?.animateToRegion({
+      latitude: selectedLocation.latitude,
+      longitude: selectedLocation.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+    }, 300);
+  }, [isInitialized, selectedLocation]);
+
+  useEffect(() => {
+    if (!myLocation || !isInitialized || selectedLocation || hasCenteredOnCurrentLocationRef.current) return;
+    hasCenteredOnCurrentLocationRef.current = true;
+    mapRef.current?.animateToRegion({
+      latitude: myLocation.coords.latitude,
+      longitude: myLocation.coords.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+    }, 300);
+  }, [isInitialized, myLocation, selectedLocation]);
+
+  useEffect(() => {
+    const query = locationQuery?.trim();
+    if (!query || selectedLocation || !isInitialized) return;
+
+    const timer = setTimeout(() => {
+      Location.geocodeAsync(query)
+        .then((results) => {
+          const firstResult = results[0];
+          if (!firstResult) return;
+          mapRef.current?.animateToRegion({
+            latitude: firstResult.latitude,
+            longitude: firstResult.longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }, 300);
+        })
+        .catch((error) => {
+          console.warn('Failed to geocode selected map location:', error);
+        });
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [isInitialized, locationQuery, selectedLocation]);
+
   if (!isInitialized) {
     return (
       <View style={[styles.map, style, styles.loadingContainer]}>
@@ -221,9 +280,15 @@ export const AppMap = ({
 
   return (
     <MapView
+      ref={mapRef}
       provider={PROVIDER_GOOGLE}
       style={[styles.map, style]}
-      initialRegion={myLocation ? {
+      initialRegion={selectedLocation ? {
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      } : myLocation ? {
         latitude: myLocation.coords.latitude,
         longitude: myLocation.coords.longitude,
         latitudeDelta: 0.01,
@@ -231,6 +296,7 @@ export const AppMap = ({
       } : INITIAL_REGION}
       showsUserLocation={false}
       showsMyLocationButton={true}
+      onPress={(event) => onLocationSelect?.(event.nativeEvent.coordinate)}
     >
       {myLocation && (
         <Marker
@@ -243,7 +309,7 @@ export const AppMap = ({
           title={userName}
           tracksViewChanges={Boolean(profileImage)}
         >
-          <View style={styles.markerBorder}>
+          <View style={[styles.markerBorder, styles.currentMarkerBorder]}>
             <ProfileAvatar
               key={selfMarkerImageKey}
               name={userName}
@@ -278,6 +344,13 @@ export const AppMap = ({
           </Marker>
         );
       })}
+      {selectedLocation && (
+        <Marker
+          coordinate={selectedLocation}
+          pinColor="#ff4500"
+          title="待ち合わせ場所"
+        />
+      )}
     </MapView>
   );
 };
@@ -304,6 +377,10 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
     overflow: 'hidden',
+  },
+  currentMarkerBorder: {
+    borderWidth: 3,
+    borderColor: '#000000',
   },
   avatar: {
     width: 38,

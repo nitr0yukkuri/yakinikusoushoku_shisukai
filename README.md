@@ -132,11 +132,11 @@ go mod tidy
 
 # DBマイグレーション
 psql $DATABASE_URL -f migrations/0001_init.sql
-
-psql 'postgresql://neondb_owner:npg_PBj0Zi1dEaLQ@ep-odd-field-aqcp88vp-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require' -f migrations/0001_init.sql
+psql $DATABASE_URL -f migrations/0002_friends.sql
+psql $DATABASE_URL -f migrations/0003_meetups.sql
 
 # サーバー起動
-go run main.go
+go run .
 ```
 
 ### 4. フロントエンドの起動
@@ -172,6 +172,38 @@ cd mobile
 | `EXPO_PUBLIC_API_URL` | frontend | バックエンドAPIのベースURL |
 | `EXPO_PUBLIC_WS_URL` | frontend | WebSocketサーバーのURL |
 | `EXPO_PUBLIC_GOOGLE_CLIENT_ID` | frontend | Google OAuth クライアントID |
+
+---
+
+## バックエンドAPI
+
+`/health` と `/auth/google` 以外のユーザー向けAPIでは、原則として
+`Authorization: Bearer <token>` を送信する。
+
+### フレンド
+
+- `GET /friends` — フレンド一覧
+- `GET /friends/search?userId=...` — ID検索
+- `POST /friends/requests` — 申請送信
+- `GET /friends/requests` — 受信・送信中申請
+- `PUT /friends/requests` — 承認・拒否・取消
+- `DELETE /friends?userId=...` — フレンド削除
+- `GET /friends/qr` — QRコードへ埋め込むデータ
+
+### 待ち合わせ
+
+- `GET /meetups` / `POST /meetups` — 一覧・作成
+- `GET /meetups/{id}` / `PUT /meetups/{id}` / `DELETE /meetups/{id}` — 詳細・編集・中止
+- `POST /meetups/join` — 招待コードで参加
+- `PUT /meetups/{id}/members` — 招待の承認・辞退、メンバー削除
+- `POST /meetups/{id}/eta` — Google Routes APIで自分のETAを計算・保存
+- `GET /meetups/{id}/eta` — 参加者の最新ETA一覧
+
+### WebSocket
+
+1. `POST /ws/tickets` に `meetupId` を送り、60秒間有効な1回限りのチケットを取得する。
+2. `GET /ws?ticket=...` へWebSocket接続する。
+3. 承認済み参加者だけが接続でき、送信者のユーザーIDはサーバー側で確定する。
 
 ---
 

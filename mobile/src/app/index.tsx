@@ -1,14 +1,12 @@
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, Image, TouchableOpacity, Text } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { StyleSheet, View, Image, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Popup } from '../components/Popup';
-import ProfileEditSection from '../components/ProfileEditSection';
 import { useProfile, UserProfile } from '../contexts/profile-context';
-import { getProfileImageSignature } from '../utils/profile-image';
+import { getApiUrl } from '../utils/api-url';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -17,11 +15,11 @@ type AuthResponse = {
   user: UserProfile;
 };
 
-// ★修正箇所：.envの設定に合わせて EXPO_PUBLIC_GOOGLE_CLIENT_ID を読み込む
+// .envの設定に合わせて EXPO_PUBLIC_GOOGLE_CLIENT_ID を読み込む
 const webClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
 const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
-const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+const apiUrl = getApiUrl();
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -36,8 +34,6 @@ export default function LoginScreen() {
   });
 
   const canLogin = Boolean(request);
-
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const loginWithBackend = useCallback((idToken: string) => {
     fetch(`${apiUrl}/auth/google`, {
@@ -83,15 +79,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={() => setIsProfileOpen(true)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.iconText}>👤</Text>
-        </TouchableOpacity>
-      </View>
+      {/* 右上のアイコンを削除しました */}
 
       <View style={styles.logoContainer}>
         <Image
@@ -110,18 +98,8 @@ export default function LoginScreen() {
           />
         </TouchableOpacity>
       </View>
-
-      <Popup
-        visible={isProfileOpen}
-        onClose={() => setIsProfileOpen(false)}
-        title="プロフィール設定"
-        icon="person-outline"
-      >
-        <ProfileEditSection
-          key={`${profile?.id ?? 'profile'}-${profile?.name ?? ''}-${profile?.bio ?? ''}-${getProfileImageSignature(profile?.profileImage)}`}
-          onSaveSuccess={() => setIsProfileOpen(false)}
-        />
-      </Popup>
+      
+      {/* ここにあったPopupも削除しました */}
     </SafeAreaView>
   );
 }
@@ -132,28 +110,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2FBE2',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  header: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    zIndex: 10,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  iconText: {
-    fontSize: 22,
   },
   logoContainer: {
     flex: 1,

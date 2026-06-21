@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Image,
-  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -14,40 +13,74 @@ import { useRouter } from 'expo-router';
 import { AppMap } from '../components/AppMap';
 import { CalendarView } from '../components/CalendarView';
 import { Footer } from '../components/Footer';
+import { FriendPanel } from '../components/FriendPanel';
+import MeetupSettingForm from '../components/meetupSettingForm';
+import PastimeSpotPanel from '../components/PastimeSpotPanel';
 import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
 import { useProfile } from '../contexts/profile-context';
 import { getProfileImageSignature } from '../utils/profile-image';
-import MeetupSettingForm from '../components/meetupSettingForm';
-import { FriendPanel } from '../components/FriendPanel'; // ★ここを追加：新しく作ったFriendPanelを読み込む
 
-const pastimeOptions = ['カフェ', 'カラオケ', 'ファミレス', 'ゲーム', 'ジム'];
+const pastimeOptions = [
+  'カフェ',
+  'カラオケ',
+  'ファミレス',
+  'ゲーム',
+  'ジム',
+];
+
+const scheduleData: Record<
+  string,
+  { id: string; title: string }[]
+> = {
+  '2026-06-20': [
+    { id: '1', title: 'デスゲーム' },
+    { id: '2', title: 'ボーリング調査' },
+  ],
+  '2026-06-23': [
+    { id: '3', title: '巨大隕石衝突' },
+  ],
+};
 
 export default function HomeScreen() {
   const router = useRouter();
   const { profile, avatarUrl, logout } = useProfile();
 
-  // 各種ポップアップの表示・非表示を管理するState
   const [isPopupVisible, setPopupVisible] = useState(false);
-  const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
-  const [isSettingsVisible, setSettingsVisible] = useState(false);
+  const [isProfilePopupVisible, setProfilePopupVisible] =
+    useState(false);
+  const [isSettingsVisible, setSettingsVisible] =
+    useState(false);
   const [isSystemVisible, setSystemVisible] = useState(false);
-  const [isPastimeVisible, setPastimeVisible] = useState(false);
-  const [isCalendarPopupVisible, setCalendarPopupVisible] = useState(false);
-  const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
-  
-  // ★ここを追加：フレンドポップアップ用のState
-  const [isFriendPopupVisible, setFriendPopupVisible] = useState(false);
+  const [isPastimeVisible, setPastimeVisible] =
+    useState(false);
+  const [isCalendarPopupVisible, setCalendarPopupVisible] =
+    useState(false);
+  const [isMeetupSettingVisible, setMeetupSettingVisible] =
+    useState(false);
+  const [isFriendPopupVisible, setFriendPopupVisible] =
+    useState(false);
+  const [isSpotPopupVisible, setSpotPopupVisible] =
+    useState(false);
 
-  const [selectedPastimes, setSelectedPastimes] = useState<string[]>([]);
+  const [selectedPastimes, setSelectedPastimes] = useState<
+    string[]
+  >([]);
   const [selectedDate, setSelectedDate] = useState('');
-  const [markedDates, setMarkedDates] = useState({});
+
+  const selectedEvents = selectedDate
+    ? scheduleData[selectedDate] || []
+    : [];
+
+  const hasEvents = selectedEvents.length > 0;
 
   const togglePastime = (option: string) => {
-    setSelectedPastimes((prev) =>
-      prev.includes(option) ? prev.filter((p) => p !== option) : [...prev, option],
+    setSelectedPastimes((previous) =>
+      previous.includes(option)
+        ? previous.filter((item) => item !== option)
+        : [...previous, option],
     );
   };
 
@@ -56,11 +89,8 @@ export default function HomeScreen() {
     router.replace('/');
   };
 
-  const handleDayPress = (day: any) => {
-    setSelectedDate(day.dateString);
-    setMarkedDates({
-      [day.dateString]: { selected: true, selectedColor: '#2330df' },
-    });
+  const handleDayPress = (dateString: string) => {
+    setSelectedDate(dateString);
   };
 
   return (
@@ -72,8 +102,14 @@ export default function HomeScreen() {
         profileImage={avatarUrl || undefined}
       />
 
-      <SafeAreaView style={styles.safeArea} pointerEvents="box-none">
-        <View style={styles.contentWrapper} pointerEvents="box-none">
+      <SafeAreaView
+        style={styles.safeArea}
+        pointerEvents="box-none"
+      >
+        <View
+          style={styles.contentWrapper}
+          pointerEvents="box-none"
+        >
           <View style={styles.header}>
             <Image
               source={require('../../assets/images/matsunya-logo.png')}
@@ -87,7 +123,9 @@ export default function HomeScreen() {
               activeOpacity={0.7}
             >
               <ProfileAvatar
-                key={`${profile?.name ?? ''}:${getProfileImageSignature(avatarUrl)}`}
+                key={`${profile?.name ?? ''}:${getProfileImageSignature(
+                  avatarUrl,
+                )}`}
                 name={profile?.name}
                 profileImage={avatarUrl}
                 size={50}
@@ -96,9 +134,11 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.mainContent} pointerEvents="none" />
+          <View
+            style={styles.mainContent}
+            pointerEvents="none"
+          />
 
-          {/* 通知ポップアップ */}
           <Popup
             visible={isPopupVisible}
             onClose={() => setPopupVisible(false)}
@@ -106,18 +146,15 @@ export default function HomeScreen() {
             message="新着の通知はありません。"
           />
 
-          {/* ★ここを追加：フレンド画面のポップアップ */}
           <Popup
             visible={isFriendPopupVisible}
             onClose={() => setFriendPopupVisible(false)}
             title="フレンド"
             icon="people-outline"
           >
-            {/* 新しく作ってくれたFriendPanelをここに表示 */}
             <FriendPanel />
           </Popup>
 
-          {/* プロフィール設定ポップアップ */}
           <Popup
             visible={isProfilePopupVisible}
             onClose={() => setProfilePopupVisible(false)}
@@ -125,51 +162,108 @@ export default function HomeScreen() {
             icon="person-outline"
           >
             <ProfileEditSection
-              key={`${profile?.id ?? 'profile'}-${profile?.name ?? ''}-${profile?.bio ?? ''}-${getProfileImageSignature(avatarUrl)}`}
-              onSaveSuccess={() => setProfilePopupVisible(false)}
+              key={`${profile?.id ?? 'profile'}-${
+                profile?.name ?? ''
+              }-${profile?.bio ?? ''}-${getProfileImageSignature(
+                avatarUrl,
+              )}`}
+              onSaveSuccess={() =>
+                setProfilePopupVisible(false)
+              }
             />
           </Popup>
 
-          {/* カレンダーポップアップ */}
           <Popup
             visible={isCalendarPopupVisible}
             onClose={() => setCalendarPopupVisible(false)}
-            title="日付を選択"
+            title="スケジュール"
             icon="calendar-outline"
           >
             <CalendarView
               selectedDate={selectedDate}
               onDayPress={handleDayPress}
-              markedDates={markedDates}
+              scheduleData={scheduleData}
             />
 
-            <TouchableOpacity
-              style={styles.selectButton}
-              onPress={() => {
-                setCalendarPopupVisible(false);
-                setMeetupSettingVisible(true);
-              }}
-            >
-              <Text style={styles.selectButtonText}>選択</Text>
-            </TouchableOpacity>
+            <View style={styles.calendarActions}>
+              {!selectedDate ? (
+                <Text style={styles.noDateText}>
+                  日付を選択してください
+                </Text>
+              ) : hasEvents ? (
+                <View style={styles.calendarButtonRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.selectButton,
+                      styles.calendarRowButton,
+                    ]}
+                    onPress={() =>
+                      setMeetupSettingVisible(true)
+                    }
+                  >
+                    <Text style={styles.selectButtonText}>
+                      予定を追加
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.selectButton,
+                      styles.calendarRowButton,
+                      styles.editButton,
+                    ]}
+                    onPress={() =>
+                      setMeetupSettingVisible(true)
+                    }
+                  >
+                    <Text style={styles.selectButtonText}>
+                      編集
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.selectButton}
+                  onPress={() =>
+                    setMeetupSettingVisible(true)
+                  }
+                >
+                  <Text style={styles.selectButtonText}>
+                    予定を追加
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </Popup>
 
-          {/* 待ち合わせ設定ポップアップ */}
           <Popup
             visible={isMeetupSettingVisible}
-            onClose={() => setMeetupSettingVisible(false)}
+            onClose={() =>
+              setMeetupSettingVisible(false)
+            }
             title="待ち合わせ詳細設定"
             icon="location-outline"
+            slideDirection="right"
+            showBackButton
           >
-            <MeetupSettingForm 
-              onSave={(data: any) => {
-                console.log("保存されたデータ:", data);
+            <MeetupSettingForm
+              selectedDate={selectedDate}
+              onSave={(data) => {
+                console.log('保存されたデータ:', data);
                 setMeetupSettingVisible(false);
-              }} 
+              }}
             />
           </Popup>
 
-          {/* 設定ポップアップ */}
+          <Popup
+            visible={isSpotPopupVisible}
+            onClose={() => setSpotPopupVisible(false)}
+            title="暇つぶしスポット"
+            icon="cafe-outline"
+          >
+            <PastimeSpotPanel />
+          </Popup>
+
           <Popup
             visible={isSettingsVisible}
             onClose={() => setSettingsVisible(false)}
@@ -177,12 +271,15 @@ export default function HomeScreen() {
             icon="settings-outline"
           >
             <SettingsPanel
-              onOpenSystem={() => setSystemVisible(true)}
-              onOpenPastime={() => setPastimeVisible(true)}
+              onOpenSystem={() =>
+                setSystemVisible(true)
+              }
+              onOpenPastime={() =>
+                setPastimeVisible(true)
+              }
             />
           </Popup>
 
-          {/* システム設定ポップアップ（右からスライド） */}
           <Popup
             visible={isSystemVisible}
             onClose={() => setSystemVisible(false)}
@@ -192,22 +289,44 @@ export default function HomeScreen() {
             showBackButton
           >
             <View style={styles.popupBody}>
-              <Text style={styles.popupLabel}>メールアドレス</Text>
-              <TextInput
-                style={styles.emailInput}
-                value={profile?.email || ''}
-                editable={false}
-              />
+              <Text style={styles.popupLabel}>
+                メールアドレス
+              </Text>
 
-              <Text style={styles.deleteTitle}>アカウントを削除</Text>
-              <TouchableOpacity style={styles.deleteButton} onPress={handleLogout}>
-                <Ionicons name="trash-outline" size={18} color="#b71c1c" />
-                <Text style={styles.deleteButtonText}>削除する</Text>
+              <View style={styles.emailDisplay}>
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={16}
+                  color="#6b706b"
+                />
+                <Text
+                  style={styles.emailText}
+                  numberOfLines={1}
+                >
+                  {profile?.email || ''}
+                </Text>
+              </View>
+
+              <Text style={styles.deleteTitle}>
+                アカウントを削除
+              </Text>
+
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={handleLogout}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={18}
+                  color="#b71c1c"
+                />
+                <Text style={styles.deleteButtonText}>
+                  削除する
+                </Text>
               </TouchableOpacity>
             </View>
           </Popup>
 
-          {/* 好きな暇つぶしポップアップ（右からスライド） */}
           <Popup
             visible={isPastimeVisible}
             onClose={() => setPastimeVisible(false)}
@@ -218,7 +337,8 @@ export default function HomeScreen() {
           >
             <View style={styles.chipGrid}>
               {pastimeOptions.map((option) => {
-                const isSelected = selectedPastimes.includes(option);
+                const isSelected =
+                  selectedPastimes.includes(option);
 
                 return (
                   <TouchableOpacity
@@ -235,7 +355,9 @@ export default function HomeScreen() {
                         style={styles.checkIcon}
                       />
                     )}
-                    <Text style={styles.chipText}>{option}</Text>
+                    <Text style={styles.chipText}>
+                      {option}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -243,13 +365,23 @@ export default function HomeScreen() {
           </Popup>
         </View>
 
-        {/* 画面下のフッター */}
         <View style={styles.footerWrapper}>
           <Footer
-            onPressFriend={() => setFriendPopupVisible(true)} // ★ここを変更：フレンドボタンを押したらポップアップを開く
-            onPressNotification={() => setPopupVisible(true)}
-            onPressCalendar={() => setCalendarPopupVisible(true)}
-            onPressSettings={() => setSettingsVisible(true)}
+            onPressFriend={() =>
+              setFriendPopupVisible(true)
+            }
+            onPressNotification={() =>
+              setPopupVisible(true)
+            }
+            onPressCalendar={() =>
+              setCalendarPopupVisible(true)
+            }
+            onPressSpot={() =>
+              setSpotPopupVisible(true)
+            }
+            onPressSettings={() =>
+              setSettingsVisible(true)
+            }
           />
         </View>
       </SafeAreaView>
@@ -292,12 +424,12 @@ const styles = StyleSheet.create({
     marginLeft: -35,
   },
   iconContainer: {
-    backgroundColor: '#ffffff',
     width: 54,
     height: 54,
     borderRadius: 30,
     borderWidth: 2,
     borderColor: '#515151',
+    backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
@@ -308,14 +440,36 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
   },
+  calendarActions: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  calendarButtonRow: {
+    width: '90%',
+    flexDirection: 'row',
+    gap: 15,
+    justifyContent: 'center',
+  },
+  calendarRowButton: {
+    flex: 1,
+    width: undefined,
+  },
+  editButton: {
+    backgroundColor: '#4d6048',
+  },
+  noDateText: {
+    color: '#888888',
+    marginTop: 15,
+  },
   selectButton: {
-    backgroundColor: '#2330df',
-    paddingVertical: 12,
     width: '80%',
     alignSelf: 'center',
+    alignItems: 'center',
+    backgroundColor: '#2330df',
+    paddingVertical: 12,
     borderRadius: 25,
     marginTop: 10,
-    alignItems: 'center',
   },
   selectButtonText: {
     color: '#ffffff',
@@ -333,15 +487,22 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginBottom: 8,
   },
-  emailInput: {
+  emailDisplay: {
     width: '100%',
     height: 38,
     borderWidth: 1,
-    borderColor: '#4d6048',
-    backgroundColor: '#f6fff1',
+    borderColor: '#b7bdb7',
+    backgroundColor: '#e6e9e6',
     paddingHorizontal: 10,
-    color: '#1f1f1f',
     marginBottom: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emailText: {
+    color: '#6b706b',
+    fontSize: 14,
+    flex: 1,
   },
   deleteTitle: {
     fontSize: 18,
@@ -353,9 +514,9 @@ const styles = StyleSheet.create({
     minWidth: 150,
     height: 46,
     borderRadius: 23,
-    backgroundColor: '#ffcdd2',
     borderWidth: 1,
     borderColor: '#e57373',
+    backgroundColor: '#ffcdd2',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
