@@ -271,9 +271,9 @@ export default function MeetupSettingForm({ onSave, selectedDate }: Props) {
 const styles = StyleSheet.create({
   container: { width: '100%', marginTop: 10 },
   label: { fontSize: 14, color: '#333', marginBottom: 8, marginTop: 16 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, backgroundColor: '#fff', color: 'rgba(51, 51, 51, 0.55)' },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 12, backgroundColor: '#fff', color: '#333' },
   friendInputBox: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#fff', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, minHeight: 46 },
-  friendInput: { flex: 1, minWidth: 96, paddingVertical: 6, fontSize: 14, color: 'rgba(51, 51, 51, 0.55)' },
+  friendInput: { flex: 1, minWidth: 96, paddingVertical: 6, fontSize: 14, color: '#333' },
   selectedFriendItem: { borderWidth: 1, borderColor: 'rgba(51, 51, 51, 0.25)', borderRadius: 16, paddingVertical: 5, paddingLeft: 10, paddingRight: 8, flexDirection: 'row', alignItems: 'center', maxWidth: '100%' },
   selectedFriendText: { color: 'rgba(51, 51, 51, 0.55)', fontSize: 14, fontWeight: '600' },
   removeFriendText: { color: 'rgba(51, 51, 51, 0.5)', fontSize: 15, fontWeight: '700', marginLeft: 8, lineHeight: 16 },

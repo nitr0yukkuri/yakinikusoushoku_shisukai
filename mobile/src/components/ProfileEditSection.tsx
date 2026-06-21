@@ -285,6 +285,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 16,
     backgroundColor: '#fafafa',
+    color: '#333',
   },
   inputError: {
     borderColor: '#c62828',
