@@ -400,6 +400,14 @@ func createFriendRequestHandler(w http.ResponseWriter, r *http.Request, pool *pg
 		writeJSONError(w, http.StatusInternalServerError, "failed to create friend request")
 		return
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO user_notifications (user_id, type, actor_id, friend_request_id, created_at)
+		VALUES ($1, 'friend_request_received', $2, $3, $4)
+		ON CONFLICT (user_id, type, friend_request_id) DO NOTHING
+	`, targetID, userNo, requestID, createdAt); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to create friend request notification")
+		return
+	}
 	if err := tx.Commit(ctx); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to create friend request")
 		return
@@ -482,6 +490,14 @@ func updateFriendRequestHandler(w http.ResponseWriter, r *http.Request, pool *pg
 			ON CONFLICT (user_low_id, user_high_id) DO NOTHING
 		`, low, high); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "failed to accept friend request")
+			return
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO user_notifications (user_id, type, actor_id, friend_request_id)
+			VALUES ($1, 'friend_request_accepted', $2, $3)
+			ON CONFLICT (user_id, type, friend_request_id) DO NOTHING
+		`, requesterID, addresseeID, req.RequestID); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to create friend acceptance notification")
 			return
 		}
 	}

@@ -384,6 +384,9 @@ func main() {
 	if err := ensureFriendSchema(ctxSchema, pool); err != nil {
 		log.Fatalf("friend schema failed: %v", err)
 	}
+	if err := ensureNotificationSchema(ctxSchema, pool); err != nil {
+		log.Fatalf("notification schema failed: %v", err)
+	}
 	if err := ensureMeetupSchema(ctxSchema, pool); err != nil {
 		log.Fatalf("meetup schema failed: %v", err)
 	}
@@ -406,6 +409,7 @@ func main() {
 	http.HandleFunc("/friends/search", withCORS(handleFriendSearch(pool)))
 	http.HandleFunc("/friends/requests", withCORS(handleFriendRequests(pool)))
 	http.HandleFunc("/friends/qr", withCORS(handleFriendQR(pool)))
+	http.HandleFunc("/notifications", withCORS(handleNotifications(pool)))
 	http.HandleFunc("/meetups", withCORS(handleMeetups(pool)))
 	http.HandleFunc("/meetups/", withCORS(handleMeetupResource(pool)))
 	http.HandleFunc("/spots/", withCORS(handleSpots(pool)))

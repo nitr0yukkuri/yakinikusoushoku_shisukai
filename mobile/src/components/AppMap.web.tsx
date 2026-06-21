@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle, ActivityIndicator } from 'react-native';
 import { getAvatarInitials } from '../utils/avatar';
+import { getApiUrl, getWebSocketUrl } from '../utils/api-url';
 import { getProfileImageSignature } from '../utils/profile-image';
 
 const INITIAL_REGION = { lat: 35.681236, lng: 139.767125 };
 const GOOGLE_MAPS_SCRIPT_ID = 'google-maps-javascript-api';
 const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
-const WS_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+
+const WS_URL = getWebSocketUrl();
+const API_URL = getApiUrl();
 
 let googleMapsScriptPromise: Promise<void> | null = null;
 const markerUrlCache = new Map<string, Promise<string>>();
@@ -27,6 +29,7 @@ type AppMapProps = {
   } | null;
   locationQuery?: string;
   onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
+  onCurrentLocationChange?: (coordinate: { latitude: number; longitude: number }) => void;
 };
 
 const fallbackMarkerUrl = (name: string, size = 48, ringColor?: string) => {
@@ -181,6 +184,7 @@ export const AppMap = ({
   selectedLocation,
   locationQuery,
   onLocationSelect,
+  onCurrentLocationChange,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -391,6 +395,7 @@ export const AppMap = ({
             lng: position.coords.longitude,
           };
           currentPositionRef.current = currentPos;
+          onCurrentLocationChange?.({ latitude: currentPos.lat, longitude: currentPos.lng });
 
           if (myMarkerRef.current) {
             myMarkerRef.current.setMap(mapInstanceRef.current);
@@ -458,7 +463,7 @@ export const AppMap = ({
         myMarkerRef.current = null;
       }
     };
-  }, [userId]);
+  }, [onCurrentLocationChange, userId]);
 
   return (
     <View style={[styles.map, style]}>

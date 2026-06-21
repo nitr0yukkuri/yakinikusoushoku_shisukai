@@ -11,16 +11,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { AppMap } from '../components/AppMap';
+import { ArrivalTimeBadge } from '../components/ArrivalTimeBadge';
 import { CalendarView } from '../components/CalendarView';
 import { Footer } from '../components/Footer';
 import { FriendPanel } from '../components/FriendPanel';
 import MeetupSettingForm from '../components/meetupSettingForm';
+import { NotificationPanel } from '../components/NotificationPanel';
 import PastimeSpotPanel from '../components/PastimeSpotPanel';
 import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
 import { useProfile } from '../contexts/profile-context';
+import { useMeetupSession } from '../hooks/use-meetup-session';
+import { useNotifications } from '../hooks/use-notifications';
 import { getProfileImageSignature } from '../utils/profile-image';
 
 const pastimeOptions = [
@@ -31,22 +35,28 @@ const pastimeOptions = [
   'ジム',
 ];
 
-const scheduleData: Record<
-  string,
-  { id: string; title: string }[]
-> = {
-  '2026-06-20': [
-    { id: '1', title: 'デスゲーム' },
-    { id: '2', title: 'ボーリング調査' },
-  ],
-  '2026-06-23': [
-    { id: '3', title: '巨大隕石衝突' },
-  ],
-};
-
 export default function HomeScreen() {
   const router = useRouter();
-  const { profile, avatarUrl, logout } = useProfile();
+  const { profile, avatarUrl, logout, token } = useProfile();
+  const {
+    activeMeetup,
+    etaMinutes,
+    meetups,
+    refreshMeetups,
+    reportCurrentLocation,
+    respondToInvite,
+    scheduleData,
+    wsTicket,
+  } = useMeetupSession(token, profile?.userId);
+  const {
+    error: notificationError,
+    isLoading: isLoadingNotifications,
+    markAllRead,
+    notifications,
+    refresh: refreshNotifications,
+    respondToFriendRequest,
+    unreadCount,
+  } = useNotifications(token);
 
   const [isPopupVisible, setPopupVisible] = useState(false);
   const [isProfilePopupVisible, setProfilePopupVisible] =
@@ -73,6 +83,9 @@ export default function HomeScreen() {
   const selectedEvents = selectedDate
     ? scheduleData[selectedDate] || []
     : [];
+  const selectedInvitedMeetup = selectedEvents
+    .map((event) => meetups.find((meetup) => String(meetup.id) === event.id))
+    .find((meetup) => meetup?.membershipStatus === 'invited');
 
   const hasEvents = selectedEvents.length > 0;
 
@@ -97,10 +110,16 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <AppMap
         style={styles.map}
+        roomId={activeMeetup ? `meetup:${activeMeetup.id}` : undefined}
+        wsTicket={wsTicket}
         userId={profile?.userId}
         userName={profile?.name}
         profileImage={avatarUrl || undefined}
+        onCurrentLocationChange={reportCurrentLocation}
       />
+      {activeMeetup && etaMinutes !== null ? (
+        <ArrivalTimeBadge minutes={etaMinutes} style={styles.arrivalBadge} />
+      ) : null}
 
       <SafeAreaView
         style={styles.safeArea}
@@ -143,8 +162,18 @@ export default function HomeScreen() {
             visible={isPopupVisible}
             onClose={() => setPopupVisible(false)}
             title="通知"
-            message="新着の通知はありません。"
-          />
+          >
+            <NotificationPanel
+              notifications={notifications}
+              isLoading={isLoadingNotifications}
+              error={notificationError}
+              onOpenFriends={() => {
+                setPopupVisible(false);
+                setFriendPopupVisible(true);
+              }}
+              onRespondRequest={respondToFriendRequest}
+            />
+          </Popup>
 
           <Popup
             visible={isFriendPopupVisible}
@@ -197,9 +226,7 @@ export default function HomeScreen() {
                       styles.selectButton,
                       styles.calendarRowButton,
                     ]}
-                    onPress={() =>
-                      setMeetupSettingVisible(true)
-                    }
+                    onPress={() => setMeetupSettingVisible(true)}
                   >
                     <Text style={styles.selectButtonText}>
                       予定を追加
@@ -212,12 +239,17 @@ export default function HomeScreen() {
                       styles.calendarRowButton,
                       styles.editButton,
                     ]}
-                    onPress={() =>
-                      setMeetupSettingVisible(true)
-                    }
+                    onPress={() => {
+                      if (selectedInvitedMeetup) {
+                        respondToInvite(selectedInvitedMeetup.id, 'accept')
+                          .catch((error) => console.warn('Failed to accept meetup invitation:', error));
+                        return;
+                      }
+                      setMeetupSettingVisible(true);
+                    }}
                   >
                     <Text style={styles.selectButtonText}>
-                      編集
+                      {selectedInvitedMeetup ? '参加' : '編集'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -250,6 +282,7 @@ export default function HomeScreen() {
               selectedDate={selectedDate}
               onSave={(data) => {
                 console.log('保存されたデータ:', data);
+                refreshMeetups().catch((error) => console.warn('Failed to refresh meetups:', error));
                 setMeetupSettingVisible(false);
               }}
             />
@@ -370,9 +403,13 @@ export default function HomeScreen() {
             onPressFriend={() =>
               setFriendPopupVisible(true)
             }
-            onPressNotification={() =>
-              setPopupVisible(true)
-            }
+            onPressNotification={() => {
+              setPopupVisible(true);
+              markAllRead()
+                .then(refreshNotifications)
+                .catch((error) => console.warn('Failed to refresh notifications:', error));
+            }}
+            notificationCount={unreadCount}
             onPressCalendar={() =>
               setCalendarPopupVisible(true)
             }
@@ -396,6 +433,13 @@ const styles = StyleSheet.create({
   },
   map: {
     ...StyleSheet.absoluteFillObject,
+  },
+  arrivalBadge: {
+    position: 'absolute',
+    top: 105,
+    alignSelf: 'center',
+    zIndex: 2,
+    elevation: 2,
   },
   safeArea: {
     flex: 1,

@@ -8,6 +8,7 @@ interface FooterProps {
   onPressCalendar?: () => void;
   onPressSpot?: () => void;
   onPressSettings?: () => void;
+  notificationCount?: number;
 }
 
 export const Footer: React.FC<FooterProps> = ({
@@ -16,6 +17,7 @@ export const Footer: React.FC<FooterProps> = ({
   onPressCalendar,
   onPressSpot,
   onPressSettings,
+  notificationCount = 0,
 }) => {
   return (
     <View style={styles.footerContainer}>
@@ -52,6 +54,11 @@ export const Footer: React.FC<FooterProps> = ({
       <TouchableOpacity style={styles.tab} onPress={onPressNotification}>
         <View style={styles.iconContainer}>
           <Ionicons name="notifications-outline" size={26} color="#515151" />
+          {notificationCount > 0 ? (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>{notificationCount > 9 ? '9+' : notificationCount}</Text>
+            </View>
+          ) : null}
         </View>
         <Text style={styles.tabText}>通知</Text>
       </TouchableOpacity>
@@ -92,6 +99,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
   },
+  notificationBadge: {
+    position: 'absolute', top: 2, right: -12, minWidth: 17, height: 17,
+    borderRadius: 9, paddingHorizontal: 4, backgroundColor: '#d93636',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  notificationBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700', lineHeight: 12 },
   tabText: {
     fontSize: 10,
     color: '#646464',

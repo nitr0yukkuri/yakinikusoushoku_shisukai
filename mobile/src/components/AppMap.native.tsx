@@ -4,9 +4,10 @@ import MapView, { PROVIDER_GOOGLE, Region, Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { ProfileAvatar } from './ProfileAvatar';
 import { getProfileImageSignature } from '../utils/profile-image';
+import { getApiUrl, getWebSocketUrl } from '../utils/api-url';
 
-const WS_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+const WS_URL = getWebSocketUrl();
+const API_URL = getApiUrl();
 
 const INITIAL_REGION: Region = {
   latitude: 35.681236,
@@ -28,6 +29,7 @@ type AppMapProps = {
   } | null;
   locationQuery?: string;
   onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
+  onCurrentLocationChange?: (coordinate: { latitude: number; longitude: number }) => void;
 };
 
 interface UserLocation {
@@ -50,6 +52,7 @@ export const AppMap = ({
   selectedLocation,
   locationQuery,
   onLocationSelect,
+  onCurrentLocationChange,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -177,6 +180,10 @@ export const AppMap = ({
           lat: initialLocation.coords.latitude,
           lng: initialLocation.coords.longitude,
         };
+        onCurrentLocationChange?.({
+          latitude: initialLocation.coords.latitude,
+          longitude: initialLocation.coords.longitude,
+        });
       } catch (error) {
         console.warn('Location fetch timed out or failed:', error);
       } finally {
@@ -196,6 +203,10 @@ export const AppMap = ({
               lat: location.coords.latitude,
               lng: location.coords.longitude,
             };
+            onCurrentLocationChange?.({
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+            });
 
             if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
               wsRef.current.send(JSON.stringify({
@@ -220,7 +231,7 @@ export const AppMap = ({
         locationSubscription.remove();
       }
     };
-  }, [userId]);
+  }, [onCurrentLocationChange, userId]);
 
   useEffect(() => {
     if (!selectedLocation || !isInitialized) return;
