@@ -374,6 +374,7 @@ func (c *wsClient) writePump() {
 // ====== WebSocket Hub の実装ここまで ======
 
 func main() {
+	_ = godotenv.Load(".env")
 	_ = godotenv.Load("../.env")
 
 	ctx := context.Background()
