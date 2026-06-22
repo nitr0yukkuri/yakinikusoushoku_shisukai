@@ -23,13 +23,18 @@ type AppMapProps = {
   userId?: string;
   userName?: string;
   profileImage?: string;
+  followCurrentLocation?: boolean;
   selectedLocation?: {
     latitude: number;
     longitude: number;
   } | null;
   locationQuery?: string;
   onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
-  onCurrentLocationChange?: (coordinate: { latitude: number; longitude: number }) => void;
+  onCurrentLocationChange?: (
+    coordinate: { latitude: number; longitude: number },
+    options?: { forceETARefresh?: boolean },
+  ) => void;
+  onWebSocketDisconnect?: () => void;
 };
 
 interface UserLocation {
@@ -49,10 +54,12 @@ export const AppMap = ({
   userId: propUserId,
   userName: propUserName,
   profileImage,
+  followCurrentLocation = false,
   selectedLocation,
   locationQuery,
   onLocationSelect,
   onCurrentLocationChange,
+  onWebSocketDisconnect,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -67,6 +74,25 @@ export const AppMap = ({
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
   const hasCenteredOnCurrentLocationRef = useRef(false);
+  const onCurrentLocationChangeRef = useRef(onCurrentLocationChange);
+  const onWebSocketDisconnectRef = useRef(onWebSocketDisconnect);
+
+  useEffect(() => {
+    onCurrentLocationChangeRef.current = onCurrentLocationChange;
+    const currentPosition = currentPositionRef.current;
+    if (!currentPosition || !onCurrentLocationChange) return;
+    const timer = setTimeout(() => {
+      onCurrentLocationChangeRef.current?.({
+        latitude: currentPosition.lat,
+        longitude: currentPosition.lng,
+      });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [onCurrentLocationChange]);
+
+  useEffect(() => {
+    onWebSocketDisconnectRef.current = onWebSocketDisconnect;
+  }, [onWebSocketDisconnect]);
 
   useEffect(() => {
     profileRef.current = { userName, profileImage };
@@ -85,11 +111,23 @@ export const AppMap = ({
 
   useEffect(() => {
     if (!wsTicket) return;
+    let disposed = false;
+    let reconnectTimer: ReturnType<typeof setInterval> | undefined;
     const ws = new WebSocket(`${WS_URL}?ticket=${encodeURIComponent(wsTicket)}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
       console.log('WebSocket connected to room:', roomId);
+      const currentPosition = currentPositionRef.current;
+      if (!currentPosition) return;
+      ws.send(JSON.stringify({
+        type: 'LOCATION_UPDATE',
+        userId,
+        userName: profileRef.current.userName,
+        profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
+        ...currentPosition,
+        timestamp: Date.now(),
+      }));
     };
 
     ws.onmessage = (event) => {
@@ -147,9 +185,16 @@ export const AppMap = ({
 
     ws.onclose = () => {
       console.log('WebSocket disconnected');
+      if (disposed) return;
+      onWebSocketDisconnectRef.current?.();
+      reconnectTimer = setInterval(() => {
+        onWebSocketDisconnectRef.current?.();
+      }, 3000);
     };
 
     return () => {
+      disposed = true;
+      if (reconnectTimer) clearInterval(reconnectTimer);
       ws.close();
       markerProfileVersionsRef.current = {};
     };
@@ -180,7 +225,7 @@ export const AppMap = ({
           lat: initialLocation.coords.latitude,
           lng: initialLocation.coords.longitude,
         };
-        onCurrentLocationChange?.({
+        onCurrentLocationChangeRef.current?.({
           latitude: initialLocation.coords.latitude,
           longitude: initialLocation.coords.longitude,
         });
@@ -203,7 +248,7 @@ export const AppMap = ({
               lat: location.coords.latitude,
               lng: location.coords.longitude,
             };
-            onCurrentLocationChange?.({
+            onCurrentLocationChangeRef.current?.({
               latitude: location.coords.latitude,
               longitude: location.coords.longitude,
             });
@@ -231,28 +276,33 @@ export const AppMap = ({
         locationSubscription.remove();
       }
     };
-  }, [onCurrentLocationChange, userId]);
+  }, [userId]);
 
   useEffect(() => {
-    if (!selectedLocation || !isInitialized) return;
+    if (!selectedLocation || !isInitialized || followCurrentLocation) return;
     mapRef.current?.animateToRegion({
       latitude: selectedLocation.latitude,
       longitude: selectedLocation.longitude,
       latitudeDelta: 0.01,
       longitudeDelta: 0.01,
     }, 300);
-  }, [isInitialized, selectedLocation]);
+  }, [followCurrentLocation, isInitialized, selectedLocation]);
 
   useEffect(() => {
-    if (!myLocation || !isInitialized || selectedLocation || hasCenteredOnCurrentLocationRef.current) return;
-    hasCenteredOnCurrentLocationRef.current = true;
+    if (
+      !myLocation
+      || !isInitialized
+      || (!followCurrentLocation && selectedLocation)
+      || (!followCurrentLocation && hasCenteredOnCurrentLocationRef.current)
+    ) return;
+    if (!followCurrentLocation) hasCenteredOnCurrentLocationRef.current = true;
     mapRef.current?.animateToRegion({
       latitude: myLocation.coords.latitude,
       longitude: myLocation.coords.longitude,
       latitudeDelta: 0.01,
       longitudeDelta: 0.01,
     }, 300);
-  }, [isInitialized, myLocation, selectedLocation]);
+  }, [followCurrentLocation, isInitialized, myLocation, selectedLocation]);
 
   useEffect(() => {
     const query = locationQuery?.trim();
@@ -294,7 +344,12 @@ export const AppMap = ({
       ref={mapRef}
       provider={PROVIDER_GOOGLE}
       style={[styles.map, style]}
-      initialRegion={selectedLocation ? {
+      initialRegion={followCurrentLocation && myLocation ? {
+        latitude: myLocation.coords.latitude,
+        longitude: myLocation.coords.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      } : selectedLocation ? {
         latitude: selectedLocation.latitude,
         longitude: selectedLocation.longitude,
         latitudeDelta: 0.01,

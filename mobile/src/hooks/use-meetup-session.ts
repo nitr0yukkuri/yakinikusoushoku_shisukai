@@ -4,6 +4,7 @@ import { getApiUrl } from '../utils/api-url';
 
 export type MeetupSummary = {
   id: number;
+  ownerUserId: string;
   scheduledAt: string;
   placeName: string;
   googlePlaceId?: string;
@@ -20,6 +21,9 @@ type ETA = {
 };
 
 const apiUrl = getApiUrl();
+const normalETAUpdateInterval = 120000;
+const demoETADebounceDelay = 350;
+const etaRefreshInterval = process.env.NODE_ENV === 'production' ? 5000 : 1000;
 
 export function useMeetupSession(token: string | null, userId?: string) {
   const [meetups, setMeetups] = useState<MeetupSummary[]>([]);
@@ -27,6 +31,10 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const [etas, setEtas] = useState<ETA[]>([]);
   const [clock, setClock] = useState(() => Date.now());
   const lastETAUpdateRef = useRef(0);
+  const demoETATimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const etaUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const etaGenerationRef = useRef(0);
+  const wsTicketRequestVersionRef = useRef(0);
 
   const refreshMeetups = useCallback(async () => {
     if (!token) {
@@ -62,6 +70,18 @@ export function useMeetupSession(token: string | null, userId?: string) {
 
   useEffect(() => {
     lastETAUpdateRef.current = 0;
+    etaGenerationRef.current += 1;
+    if (demoETATimerRef.current) {
+      clearTimeout(demoETATimerRef.current);
+      demoETATimerRef.current = null;
+    }
+
+    return () => {
+      if (demoETATimerRef.current) {
+        clearTimeout(demoETATimerRef.current);
+        demoETATimerRef.current = null;
+      }
+    };
   }, [activeMeetup?.id]);
 
   const refreshETAs = useCallback(async () => {
@@ -77,25 +97,36 @@ export function useMeetupSession(token: string | null, userId?: string) {
     setEtas(body.etas || []);
   }, [activeMeetup, token]);
 
-  useEffect(() => {
-    if (!token || !activeMeetup) return;
-    let cancelled = false;
-    fetch(`${apiUrl}/ws/tickets`, {
+  const requestWSTicket = useCallback(async () => {
+    const requestVersion = ++wsTicketRequestVersionRef.current;
+    if (!token || !activeMeetup) {
+      setIssuedWSTicket(undefined);
+      return;
+    }
+    const meetupId = activeMeetup.id;
+    const response = await fetch(`${apiUrl}/ws/tickets`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ meetupId: activeMeetup.id }),
-    })
-      .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error || '位置共有を開始できませんでした');
-        if (!cancelled) setIssuedWSTicket({ meetupId: activeMeetup.id, ticket: body.ticket });
-      })
-      .catch((error) => console.warn('Failed to create WebSocket ticket:', error));
-    return () => { cancelled = true; };
+      body: JSON.stringify({ meetupId }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || '位置共有を開始できませんでした');
+    if (requestVersion !== wsTicketRequestVersionRef.current) return;
+    setIssuedWSTicket({ meetupId, ticket: body.ticket });
   }, [activeMeetup, token]);
+
+  useEffect(() => {
+    Promise.resolve()
+      .then(requestWSTicket)
+      .catch((error) => console.warn('Failed to create WebSocket ticket:', error));
+  }, [requestWSTicket]);
+
+  const reconnectWebSocket = useCallback(() => {
+    requestWSTicket().catch((error) => console.warn('Failed to reconnect WebSocket:', error));
+  }, [requestWSTicket]);
 
   useEffect(() => {
     Promise.resolve()
@@ -105,12 +136,12 @@ export function useMeetupSession(token: string | null, userId?: string) {
     const timer = setInterval(() => {
       setClock(Date.now());
       refreshETAs().catch((error) => console.warn('Failed to refresh ETAs:', error));
-    }, 30000);
+    }, etaRefreshInterval);
     return () => clearInterval(timer);
   }, [activeMeetup, refreshETAs]);
 
-  const reportCurrentLocation = useCallback(async (coordinate: { latitude: number; longitude: number }) => {
-    if (!token || !activeMeetup || Date.now() - lastETAUpdateRef.current < 120000) return;
+  const updateETA = useCallback(async (coordinate: { latitude: number; longitude: number }) => {
+    if (!token || !activeMeetup) return;
     lastETAUpdateRef.current = Date.now();
     try {
       const response = await fetch(`${apiUrl}/meetups/${activeMeetup.id}/eta`, {
@@ -129,11 +160,43 @@ export function useMeetupSession(token: string | null, userId?: string) {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || '到着時間を計算できませんでした');
       await refreshETAs();
+      setClock(Date.now());
     } catch (error) {
       lastETAUpdateRef.current = 0;
       console.warn('Failed to update ETA:', error);
     }
   }, [activeMeetup, refreshETAs, token]);
+
+  const enqueueETAUpdate = useCallback((coordinate: { latitude: number; longitude: number }) => {
+    const generation = etaGenerationRef.current;
+    etaUpdateQueueRef.current = etaUpdateQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (generation !== etaGenerationRef.current) return;
+        await updateETA(coordinate);
+      });
+  }, [updateETA]);
+
+  const reportCurrentLocation = useCallback((
+    coordinate: { latitude: number; longitude: number },
+    options?: { forceETARefresh?: boolean },
+  ) => {
+    if (!token || !activeMeetup) return;
+
+    if (options?.forceETARefresh) {
+      if (demoETATimerRef.current) clearTimeout(demoETATimerRef.current);
+      demoETATimerRef.current = setTimeout(() => {
+        demoETATimerRef.current = null;
+        lastETAUpdateRef.current = Date.now();
+        enqueueETAUpdate(coordinate);
+      }, demoETADebounceDelay);
+      return;
+    }
+
+    if (Date.now() - lastETAUpdateRef.current < normalETAUpdateInterval) return;
+    lastETAUpdateRef.current = Date.now();
+    enqueueETAUpdate(coordinate);
+  }, [activeMeetup, enqueueETAUpdate, token]);
 
   const respondToInvite = useCallback(async (meetupId: number, action: 'accept' | 'decline') => {
     if (!token) return;
@@ -152,9 +215,8 @@ export function useMeetupSession(token: string | null, userId?: string) {
 
   const etaMinutes = useMemo(() => {
     const others = etas.filter((eta) => eta.user?.userId !== userId);
-    const candidates = others.length > 0 ? others : etas;
-    if (candidates.length === 0) return null;
-    const latestArrival = Math.max(...candidates.map((eta) => new Date(eta.arrivalAt).getTime()));
+    if (others.length === 0) return null;
+    const latestArrival = Math.max(...others.map((eta) => new Date(eta.arrivalAt).getTime()));
     return Math.max(0, Math.ceil((latestArrival - clock) / 60000));
   }, [clock, etas, userId]);
 
@@ -174,5 +236,5 @@ export function useMeetupSession(token: string | null, userId?: string) {
     ? issuedWSTicket.ticket
     : undefined;
 
-  return { activeMeetup, etaMinutes, meetups, refreshMeetups, reportCurrentLocation, respondToInvite, scheduleData, wsTicket };
+  return { activeMeetup, etaMinutes, meetups, reconnectWebSocket, refreshMeetups, reportCurrentLocation, respondToInvite, scheduleData, wsTicket };
 }

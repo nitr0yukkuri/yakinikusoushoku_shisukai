@@ -82,6 +82,7 @@ type wsClient struct {
 type wsHub struct {
 	rooms      map[string]map[*wsClient]bool
 	arrivals   map[string]map[string]time.Time
+	locations  map[string]map[string][]byte
 	broadcast  chan broadcastMessage
 	register   chan *wsClient
 	unregister chan *wsClient
@@ -116,6 +117,7 @@ func newWsHub() *wsHub {
 	return &wsHub{
 		rooms:      make(map[string]map[*wsClient]bool),
 		arrivals:   make(map[string]map[string]time.Time),
+		locations:  make(map[string]map[string][]byte),
 		broadcast:  make(chan broadcastMessage),
 		register:   make(chan *wsClient),
 		unregister: make(chan *wsClient),
@@ -134,6 +136,9 @@ func (h *wsHub) run() {
 			h.rooms[client.room][client] = true
 			for userID, arrivalAt := range h.arrivals[client.room] {
 				snapshots = append(snapshots, buildArrivalUpdate(userID, arrivalAt, time.Now()))
+			}
+			for _, location := range h.locations[client.room] {
+				snapshots = append(snapshots, append([]byte(nil), location...))
 			}
 			h.mu.Unlock()
 			for _, snapshot := range snapshots {
@@ -154,6 +159,7 @@ func (h *wsHub) run() {
 					close(client.send)
 					if len(roomClients) == 0 {
 						delete(h.rooms, client.room)
+						delete(h.locations, client.room)
 					}
 				}
 			}
@@ -173,6 +179,17 @@ func (h *wsHub) run() {
 			h.mu.Unlock()
 		}
 	}
+}
+
+func (h *wsHub) setLocation(room, userID string, body []byte) {
+	h.mu.Lock()
+	if h.locations[room] == nil {
+		h.locations[room] = make(map[string][]byte)
+	}
+	h.locations[room][userID] = append([]byte(nil), body...)
+	h.mu.Unlock()
+
+	h.broadcast <- broadcastMessage{room: room, data: body}
 }
 
 func (h *wsHub) runArrivalTicker() {
@@ -314,7 +331,7 @@ func (c *wsClient) readPump() {
 			location.Timestamp = time.Now().UnixMilli()
 			body, err := json.Marshal(location)
 			if err == nil {
-				c.hub.broadcast <- broadcastMessage{room: c.room, data: body}
+				c.hub.setLocation(c.room, location.UserID, body)
 			}
 		case "ARRIVAL_TIME_SET", "ARRIVAL_TIME_CLEAR":
 			var arrival arrivalTimeMessage
@@ -384,11 +401,11 @@ func main() {
 	if err := ensureFriendSchema(ctxSchema, pool); err != nil {
 		log.Fatalf("friend schema failed: %v", err)
 	}
-	if err := ensureNotificationSchema(ctxSchema, pool); err != nil {
-		log.Fatalf("notification schema failed: %v", err)
-	}
 	if err := ensureMeetupSchema(ctxSchema, pool); err != nil {
 		log.Fatalf("meetup schema failed: %v", err)
+	}
+	if err := ensureNotificationSchema(ctxSchema, pool); err != nil {
+		log.Fatalf("notification schema failed: %v", err)
 	}
 
 	// Hubの起動
@@ -833,7 +850,7 @@ func validateAppToken(token string, secret string) (appTokenClaims, error) {
 
 func isUserID(value string) bool {
 	for _, r := range value {
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
 			return false
 		}
 	}
@@ -862,5 +879,5 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func writeJSONError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+	writeJSON(w, status, map[string]string{"error": localizeErrorMessage(status, message)})
 }

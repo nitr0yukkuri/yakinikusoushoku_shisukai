@@ -285,7 +285,8 @@ func createMeetup(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, us
 			continue
 		}
 		seen[friendUserID] = true
-		command, err := tx.Exec(ctx, `
+		var invitedUserNo int64
+		err := tx.QueryRow(ctx, `
 			INSERT INTO meetup_members (meetup_id, user_id, role, status, invited_by)
 			SELECT $1, target.id, 'member', 'invited', $2
 			FROM auth_users target
@@ -293,13 +294,22 @@ func createMeetup(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, us
 				AND f.user_high_id = GREATEST($2, target.id)
 			WHERE target.user_id = $3
 			ON CONFLICT (meetup_id, user_id) DO NOTHING
-		`, meetupID, userNo, friendUserID)
+			RETURNING user_id
+		`, meetupID, userNo, friendUserID).Scan(&invitedUserNo)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSONError(w, http.StatusBadRequest, "invited user must be your friend: "+friendUserID)
+			return
+		}
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "failed to invite friend")
 			return
 		}
-		if command.RowsAffected() == 0 {
-			writeJSONError(w, http.StatusBadRequest, "invited user must be your friend: "+friendUserID)
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO user_notifications (user_id, type, actor_id, meetup_id)
+			VALUES ($1, 'meetup_invitation_received', $2, $3)
+			ON CONFLICT (user_id, type, meetup_id) WHERE meetup_id IS NOT NULL DO NOTHING
+		`, invitedUserNo, userNo, meetupID); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to create meetup invitation notification")
 			return
 		}
 	}
@@ -435,8 +445,22 @@ func cancelMeetup(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, us
 		return
 	}
 	if command.RowsAffected() == 0 {
-		writeJSONError(w, http.StatusNotFound, "meetup not found or not owned by you")
-		return
+		command, err = pool.Exec(ctx, `
+			UPDATE meetup_members mm
+			SET status = 'declined', updated_at = now()
+			FROM meetups m
+			WHERE mm.meetup_id = $1 AND mm.user_id = $2 AND mm.role = 'member'
+				AND mm.status <> 'declined' AND m.id = mm.meetup_id
+				AND m.status <> 'cancelled'
+		`, meetupID, userNo)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to leave meetup")
+			return
+		}
+		if command.RowsAffected() == 0 {
+			writeJSONError(w, http.StatusNotFound, "meetup not found")
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

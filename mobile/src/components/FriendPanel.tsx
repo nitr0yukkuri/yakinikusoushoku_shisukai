@@ -5,6 +5,7 @@ import QRCode from 'react-native-qrcode-svg';
 
 import { useProfile } from '../contexts/profile-context';
 import { getApiUrl } from '../utils/api-url';
+import { toUserErrorMessage } from '../utils/user-error';
 import { ProfileAvatar } from './ProfileAvatar';
 
 type Friend = { userId: string; name: string; profileImage: string };
@@ -41,9 +42,24 @@ export const FriendPanel: React.FC = () => {
   }, [token]);
 
   useEffect(() => {
-    Promise.resolve()
-      .then(loadFriends)
-      .catch((error) => setMessage(error.message));
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const refreshFriends = async () => {
+      try {
+        await loadFriends();
+      } catch (error) {
+        if (!cancelled) setMessage(toUserErrorMessage(error, 'フレンドを取得できませんでした'));
+      } finally {
+        if (!cancelled) refreshTimer = setTimeout(refreshFriends, 3000);
+      }
+    };
+
+    refreshFriends();
+    return () => {
+      cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
   }, [loadFriends]);
 
   const searchUser = async () => {
@@ -60,7 +76,7 @@ export const FriendPanel: React.FC = () => {
       if (!response.ok) throw new Error(body.error || 'ユーザーが見つかりませんでした');
       setSearchResult(body);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '検索できませんでした');
+      setMessage(toUserErrorMessage(error, '検索できませんでした'));
     } finally {
       setIsLoading(false);
     }
@@ -81,7 +97,7 @@ export const FriendPanel: React.FC = () => {
       setSearchResult({ ...searchResult, relationship: 'outgoing_pending' });
       setMessage('フレンド申請を送信しました');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '申請を送信できませんでした');
+      setMessage(toUserErrorMessage(error, '申請を送信できませんでした'));
     } finally {
       setIsLoading(false);
     }
@@ -101,7 +117,7 @@ export const FriendPanel: React.FC = () => {
       if (!response.ok) throw new Error(body.error || '申請を更新できませんでした');
       await loadFriends();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : '申請を更新できませんでした');
+      setMessage(toUserErrorMessage(error, '申請を更新できませんでした'));
     } finally {
       setIsLoading(false);
     }
@@ -119,7 +135,7 @@ export const FriendPanel: React.FC = () => {
       if (!response.ok) throw new Error(body.error || 'QRコードを取得できませんでした');
       setQrValue(body.value);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'QRコードを取得できませんでした');
+      setMessage(toUserErrorMessage(error, 'QRコードを取得できませんでした'));
     }
   };
 
@@ -214,7 +230,10 @@ export const FriendPanel: React.FC = () => {
       {showRequests ? incoming.map((request) => (
         <View key={request.id} style={styles.requestRow}>
           <ProfileAvatar profileImage={request.user.profileImage} name={request.user.name} size={36} />
-          <Text style={styles.friendName}>{request.user.name}</Text>
+          <View style={styles.friendTextArea}>
+            <Text style={styles.friendName}>{request.user.name}</Text>
+            <Text style={styles.userId}>@{request.user.userId}</Text>
+          </View>
           <TouchableOpacity onPress={() => respondRequest(request.id, 'accept')} disabled={isLoading}>
             <Ionicons name="checkmark-circle" size={27} color="#267a3f" />
           </TouchableOpacity>

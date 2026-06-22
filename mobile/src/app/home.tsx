@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -42,6 +42,7 @@ export default function HomeScreen() {
     activeMeetup,
     etaMinutes,
     meetups,
+    reconnectWebSocket,
     refreshMeetups,
     reportCurrentLocation,
     respondToInvite,
@@ -79,13 +80,28 @@ export default function HomeScreen() {
     string[]
   >([]);
   const [selectedDate, setSelectedDate] = useState('');
+  const [editingMeetupId, setEditingMeetupId] = useState<number | null>(null);
 
   const selectedEvents = selectedDate
     ? scheduleData[selectedDate] || []
     : [];
-  const selectedInvitedMeetup = selectedEvents
-    .map((event) => meetups.find((meetup) => String(meetup.id) === event.id))
+  const selectedMeetups = selectedEvents.flatMap((event) => {
+    const meetup = meetups.find((item) => String(item.id) === event.id);
+    return meetup ? [meetup] : [];
+  });
+  const selectedInvitedMeetup = selectedMeetups
     .find((meetup) => meetup?.membershipStatus === 'invited');
+  const selectedOwnedMeetup = selectedMeetups
+    .find((meetup) => meetup.ownerUserId === profile?.userId);
+  const selectedEditableMeetup = selectedOwnedMeetup || selectedMeetups
+    .find((meetup) => meetup.membershipStatus === 'accepted');
+  const editingMeetup = editingMeetupId === null
+    ? null
+    : meetups.find((meetup) => meetup.id === editingMeetupId) || null;
+  const activeMeetupLocation = useMemo(() => activeMeetup ? {
+    latitude: activeMeetup.latitude,
+    longitude: activeMeetup.longitude,
+  } : null, [activeMeetup]);
 
   const hasEvents = selectedEvents.length > 0;
 
@@ -104,6 +120,7 @@ export default function HomeScreen() {
 
   const handleDayPress = (dateString: string) => {
     setSelectedDate(dateString);
+    setEditingMeetupId(null);
   };
 
   return (
@@ -115,7 +132,10 @@ export default function HomeScreen() {
         userId={profile?.userId}
         userName={profile?.name}
         profileImage={avatarUrl || undefined}
+        followCurrentLocation
+        selectedLocation={activeMeetupLocation}
         onCurrentLocationChange={reportCurrentLocation}
+        onWebSocketDisconnect={reconnectWebSocket}
       />
       {activeMeetup && etaMinutes !== null ? (
         <ArrivalTimeBadge minutes={etaMinutes} style={styles.arrivalBadge} />
@@ -172,6 +192,10 @@ export default function HomeScreen() {
                 setFriendPopupVisible(true);
               }}
               onRespondRequest={respondToFriendRequest}
+              onRespondMeetup={async (meetupId, action) => {
+                await respondToInvite(meetupId, action);
+                await refreshNotifications();
+              }}
             />
           </Popup>
 
@@ -226,39 +250,47 @@ export default function HomeScreen() {
                       styles.selectButton,
                       styles.calendarRowButton,
                     ]}
-                    onPress={() => setMeetupSettingVisible(true)}
+                    onPress={() => {
+                      setEditingMeetupId(null);
+                      setMeetupSettingVisible(true);
+                    }}
                   >
                     <Text style={styles.selectButtonText}>
                       予定を追加
                     </Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[
-                      styles.selectButton,
-                      styles.calendarRowButton,
-                      styles.editButton,
-                    ]}
-                    onPress={() => {
-                      if (selectedInvitedMeetup) {
-                        respondToInvite(selectedInvitedMeetup.id, 'accept')
-                          .catch((error) => console.warn('Failed to accept meetup invitation:', error));
-                        return;
-                      }
-                      setMeetupSettingVisible(true);
-                    }}
-                  >
-                    <Text style={styles.selectButtonText}>
-                      {selectedInvitedMeetup ? '参加' : '編集'}
-                    </Text>
-                  </TouchableOpacity>
+                  {selectedInvitedMeetup || selectedEditableMeetup ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.selectButton,
+                        styles.calendarRowButton,
+                        styles.editButton,
+                      ]}
+                      onPress={() => {
+                        if (selectedInvitedMeetup) {
+                          respondToInvite(selectedInvitedMeetup.id, 'accept')
+                            .catch((error) => console.warn('Failed to accept meetup invitation:', error));
+                          return;
+                        }
+                        if (!selectedEditableMeetup) return;
+                        setEditingMeetupId(selectedEditableMeetup.id);
+                        setMeetupSettingVisible(true);
+                      }}
+                    >
+                      <Text style={styles.selectButtonText}>
+                        {selectedInvitedMeetup ? '参加' : '編集'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : (
                 <TouchableOpacity
                   style={styles.selectButton}
-                  onPress={() =>
-                    setMeetupSettingVisible(true)
-                  }
+                  onPress={() => {
+                    setEditingMeetupId(null);
+                    setMeetupSettingVisible(true);
+                  }}
                 >
                   <Text style={styles.selectButtonText}>
                     予定を追加
@@ -279,10 +311,18 @@ export default function HomeScreen() {
             showBackButton
           >
             <MeetupSettingForm
+              key={editingMeetup ? `edit-${editingMeetup.id}` : `create-${selectedDate}`}
               selectedDate={selectedDate}
+              existingMeetup={editingMeetup}
               onSave={(data) => {
                 console.log('保存されたデータ:', data);
                 refreshMeetups().catch((error) => console.warn('Failed to refresh meetups:', error));
+                setEditingMeetupId(null);
+                setMeetupSettingVisible(false);
+              }}
+              onDelete={() => {
+                refreshMeetups().catch((error) => console.warn('Failed to refresh meetups:', error));
+                setEditingMeetupId(null);
                 setMeetupSettingVisible(false);
               }}
             />
@@ -436,7 +476,7 @@ const styles = StyleSheet.create({
   },
   arrivalBadge: {
     position: 'absolute',
-    top: 105,
+    top: 85,
     alignSelf: 'center',
     zIndex: 2,
     elevation: 2,

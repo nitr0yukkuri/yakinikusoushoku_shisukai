@@ -4,14 +4,18 @@ import { getApiUrl } from '../utils/api-url';
 
 export type AppNotification = {
   id: number;
-  type: 'friend_request_received' | 'friend_request_accepted';
+  type: 'friend_request_received' | 'friend_request_accepted' | 'meetup_invitation_received';
   actor: {
     userId: string;
     name: string;
     profileImage: string;
   };
-  friendRequestId: number;
-  friendRequestStatus: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  friendRequestId?: number;
+  friendRequestStatus?: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  meetupId?: number;
+  meetupPlaceName?: string;
+  meetupScheduledAt?: string;
+  meetupInvitationStatus?: 'invited' | 'accepted' | 'declined';
   read: boolean;
   createdAt: string;
 };

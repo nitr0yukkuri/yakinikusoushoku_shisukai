@@ -13,6 +13,7 @@ import { ProfileAvatar } from './ProfileAvatar';
 import { useProfile } from '../contexts/profile-context';
 import { getPersistableProfileImage, getProfileImageSignature } from '../utils/profile-image';
 import { getApiUrl } from '../utils/api-url';
+import { toUserErrorMessage } from '../utils/user-error';
 
 const apiUrl = getApiUrl();
 
@@ -40,7 +41,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       !trimmedUserId ||
       trimmedUserId === profile?.userId ||
       trimmedUserId.length > 20 ||
-      !/^[a-zA-Z0-9]+$/.test(trimmedUserId)
+      !/^[a-zA-Z0-9_]+$/.test(trimmedUserId)
     ) {
       return;
     }
@@ -97,8 +98,8 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       Alert.alert('エラー', 'ユーザーIDを入力してください。');
       return;
     }
-    if (!/^[a-zA-Z0-9]+$/.test(trimmedUserId)) {
-      Alert.alert('エラー', 'ユーザーIDは半角英数字で入力してください。');
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmedUserId)) {
+      Alert.alert('エラー', 'ユーザーIDは半角英数字またはアンダースコアで入力してください。');
       return;
     }
     if (trimmedUserId.length > 20) {
@@ -133,11 +134,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
       Alert.alert('成功', 'プロフィールを更新しました。');
       onSaveSuccess();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'プロフィールの更新に失敗しました。';
-      Alert.alert(
-        'エラー',
-        message === 'userId is already in use' ? 'このユーザーIDはすでに使われています。' : message,
-      );
+      Alert.alert('エラー', toUserErrorMessage(error, 'プロフィールの更新に失敗しました。'));
     } finally {
       setIsSaving(false);
     }
@@ -172,9 +169,9 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
             setUserId(value);
             setIsCheckingUserId(false);
             setIsDuplicateUserId(false);
-            setUserIdError(value && !/^[a-zA-Z0-9]*$/.test(value) ? '半角英数字のみで入力してください' : '');
+            setUserIdError(value && !/^[a-zA-Z0-9_]*$/.test(value) ? '半角英数字またはアンダースコアで入力してください' : '');
           }}
-          placeholder="半角英数字で入力"
+          placeholder="半角英数字・_で入力"
           placeholderTextColor="rgba(51, 51, 51, 0.45)"
           autoCapitalize="none"
           autoCorrect={false}
