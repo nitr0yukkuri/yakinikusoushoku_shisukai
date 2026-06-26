@@ -14,16 +14,19 @@ type FriendRequest = { id: number; user: Friend; createdAt: string };
 
 const apiUrl = getApiUrl();
 
-export const FriendPanel: React.FC = () => {
+// ==========================================
+// ① メインのフレンド一覧コンポーネント
+// ==========================================
+interface FriendPanelProps {
+  onOpenSearch: () => void;
+  onOpenQR: () => void;
+  onOpenRequests: () => void; // ★追加
+}
+
+export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR, onOpenRequests }) => {
   const { token } = useProfile();
-  const [activeTab, setActiveTab] = useState<'list' | 'search' | 'qr'>('list');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
-  const [showRequests, setShowRequests] = useState(false);
-  const [searchId, setSearchId] = useState('');
-  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
-  const [qrValue, setQrValue] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
 
   const loadFriends = useCallback(async () => {
@@ -61,6 +64,58 @@ export const FriendPanel: React.FC = () => {
       if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [loadFriends]);
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.topActionContainer}>
+        <TouchableOpacity style={styles.topActionButton} onPress={onOpenSearch}>
+          <Ionicons name="person-add-outline" size={24} color="#333" />
+          <Text style={styles.topActionText}>ID検索</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.topActionButton} onPress={onOpenQR}>
+          <Ionicons name="qr-code-outline" size={24} color="#333" />
+          <Text style={styles.topActionText}>QRコード</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* ★変更: タップでポップアップを開くようにし、アイコンを横矢印に変更 */}
+      <TouchableOpacity style={styles.pendingRequestButton} onPress={onOpenRequests}>
+        <Text style={styles.pendingRequestText}>保留中の申請 {incoming.length > 0 ? `(${incoming.length})` : ''}</Text>
+        <Ionicons name="chevron-forward" size={20} color="#666" />
+      </TouchableOpacity>
+
+      <View style={styles.friendListSection}>
+        <Text style={styles.sectionTitle}>フレンド</Text>
+        <FlatList
+          data={friends}
+          keyExtractor={(item) => item.userId}
+          scrollEnabled={false}
+          ListEmptyComponent={<Text style={styles.emptyText}>フレンドがいません</Text>}
+          renderItem={({ item }) => (
+            <View style={styles.friendListItem}>
+              <ProfileAvatar profileImage={item.profileImage} name={item.name} size={40} />
+              <View style={styles.friendTextArea}>
+                <Text style={styles.friendName}>{item.name}</Text>
+                <Text style={styles.userId}>@{item.userId}</Text>
+              </View>
+            </View>
+          )}
+        />
+      </View>
+      {message ? <Text style={styles.message}>{message}</Text> : null}
+    </View>
+  );
+};
+
+// ==========================================
+// ② ID検索用のコンポーネント
+// ==========================================
+export const FriendSearchPanel: React.FC = () => {
+  const { token } = useProfile();
+  const [searchId, setSearchId] = useState('');
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState('');
 
   const searchUser = async () => {
     if (!token || !searchId.trim()) return;
@@ -103,6 +158,137 @@ export const FriendPanel: React.FC = () => {
     }
   };
 
+  const requestLabel = searchResult?.relationship === 'none' ? '申請' : searchResult?.relationship === 'friends'
+    ? 'フレンド' : searchResult?.relationship === 'self' ? '自分' : '申請中';
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.searchRow}>
+        <TextInput
+          style={styles.input}
+          placeholder="IDを入力"
+          placeholderTextColor="#999"
+          value={searchId}
+          onChangeText={setSearchId}
+          onSubmitEditing={searchUser}
+          autoCapitalize="none"
+        />
+        <TouchableOpacity style={styles.searchButton} onPress={searchUser} disabled={isLoading}>
+          <Ionicons name="search" size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.sectionTitle}>検索結果</Text>
+      {isLoading ? <ActivityIndicator color="#267a3f" /> : null}
+      {searchResult ? (
+        <View style={styles.searchResultItem}>
+          <ProfileAvatar profileImage={searchResult.profile.profileImage} name={searchResult.profile.name} size={40} />
+          <View style={styles.friendTextArea}>
+            <Text style={styles.searchResultName}>{searchResult.profile.name}</Text>
+            <Text style={styles.userId}>@{searchResult.profile.userId}</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.requestButton, searchResult.relationship !== 'none' && styles.disabledButton]}
+            onPress={sendRequest}
+            disabled={searchResult.relationship !== 'none' || isLoading}
+          >
+            <Text style={styles.requestButtonText}>{requestLabel}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      {message ? <Text style={styles.message}>{message}</Text> : null}
+    </View>
+  );
+};
+
+// ==========================================
+// ③ QRコード用のコンポーネント
+// ==========================================
+export const FriendQRPanel: React.FC = () => {
+  const { token } = useProfile();
+  const [qrValue, setQrValue] = useState('');
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchQR = async () => {
+      if (!token) return;
+      try {
+        const response = await fetch(`${apiUrl}/friends/qr`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'QRコードを取得できませんでした');
+        if (isMounted) setQrValue(body.value);
+      } catch (error) {
+        if (isMounted) setMessage(toUserErrorMessage(error, 'QRコードを取得できませんでした'));
+      }
+    };
+
+    fetchQR();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [token]);
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.qrContainer}>
+        {qrValue ? (
+          <View style={styles.qrCodeWrapper}>
+            <QRCode value={qrValue} size={180} color="#1f1f1f" backgroundColor="#FFFFFF" />
+          </View>
+        ) : <ActivityIndicator color="#267a3f" />}
+        <Text style={styles.qrDescription}>相手に読み取ってもらい{`\n`}フレンドを追加してください</Text>
+      </View>
+      {message ? <Text style={styles.message}>{message}</Text> : null}
+    </View>
+  );
+};
+
+// ==========================================
+// ④ 保留中の申請一覧用コンポーネント (新規追加)
+// ==========================================
+export const FriendRequestsPanel: React.FC = () => {
+  const { token } = useProfile();
+  const [incoming, setIncoming] = useState<FriendRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const loadRequests = useCallback(async () => {
+    if (!token) return;
+    try {
+      const response = await fetch(`${apiUrl}/friends/requests`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || '申請を取得できませんでした');
+      setIncoming(body.incoming || []);
+    } catch (error) {
+      setMessage(toUserErrorMessage(error, '申請を取得できませんでした'));
+    }
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const refreshRequests = async () => {
+      try {
+        await loadRequests();
+      } finally {
+        if (!cancelled) refreshTimer = setTimeout(refreshRequests, 3000);
+      }
+    };
+
+    refreshRequests();
+    return () => {
+      cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [loadRequests]);
+
   const respondRequest = async (requestId: number, action: 'accept' | 'reject') => {
     if (!token) return;
     setIsLoading(true);
@@ -115,7 +301,7 @@ export const FriendPanel: React.FC = () => {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || '申請を更新できませんでした');
-      await loadFriends();
+      await loadRequests();
     } catch (error) {
       setMessage(toUserErrorMessage(error, '申請を更新できませんでした'));
     } finally {
@@ -123,143 +309,28 @@ export const FriendPanel: React.FC = () => {
     }
   };
 
-  const openQR = async () => {
-    setActiveTab('qr');
-    if (!token) return;
-    setMessage('');
-    try {
-      const response = await fetch(`${apiUrl}/friends/qr`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || 'QRコードを取得できませんでした');
-      setQrValue(body.value);
-    } catch (error) {
-      setMessage(toUserErrorMessage(error, 'QRコードを取得できませんでした'));
-    }
-  };
-
-  if (activeTab === 'search') {
-    const requestLabel = searchResult?.relationship === 'none' ? '申請' : searchResult?.relationship === 'friends'
-      ? 'フレンド' : searchResult?.relationship === 'self' ? '自分' : '申請中';
-    return (
-      <View style={styles.container}>
-        <View style={styles.subHeader}>
-          <TouchableOpacity onPress={() => setActiveTab('list')} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={20} color="#4d6048" />
-            <Text style={styles.backButtonText}>戻る</Text>
-          </TouchableOpacity>
-          <Text style={styles.subHeaderTitle}>ID検索</Text>
-        </View>
-        <View style={styles.searchRow}>
-          <TextInput
-            style={styles.input}
-            placeholder="IDを入力"
-            placeholderTextColor="#999"
-            value={searchId}
-            onChangeText={setSearchId}
-            onSubmitEditing={searchUser}
-            autoCapitalize="none"
-          />
-          <TouchableOpacity style={styles.searchButton} onPress={searchUser} disabled={isLoading}>
-            <Ionicons name="search" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.sectionTitle}>検索結果</Text>
-        {isLoading ? <ActivityIndicator color="#267a3f" /> : null}
-        {searchResult ? (
-          <View style={styles.searchResultItem}>
-            <ProfileAvatar profileImage={searchResult.profile.profileImage} name={searchResult.profile.name} size={40} />
+  return (
+    <View style={[styles.container, { flex: 1 }]}>
+      <FlatList
+        data={incoming}
+        keyExtractor={(item) => String(item.id)}
+        ListEmptyComponent={<Text style={styles.emptyText}>保留中の申請はありません</Text>}
+        renderItem={({ item: request }) => (
+          <View style={styles.requestRow}>
+            <ProfileAvatar profileImage={request.user.profileImage} name={request.user.name} size={40} />
             <View style={styles.friendTextArea}>
-              <Text style={styles.searchResultName}>{searchResult.profile.name}</Text>
-              <Text style={styles.userId}>@{searchResult.profile.userId}</Text>
+              <Text style={styles.friendName}>{request.user.name}</Text>
+              <Text style={styles.userId}>@{request.user.userId}</Text>
             </View>
-            <TouchableOpacity
-              style={[styles.requestButton, searchResult.relationship !== 'none' && styles.disabledButton]}
-              onPress={sendRequest}
-              disabled={searchResult.relationship !== 'none' || isLoading}
-            >
-              <Text style={styles.requestButtonText}>{requestLabel}</Text>
+            <TouchableOpacity onPress={() => respondRequest(request.id, 'accept')} disabled={isLoading}>
+              <Ionicons name="checkmark-circle" size={32} color="#267a3f" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => respondRequest(request.id, 'reject')} disabled={isLoading}>
+              <Ionicons name="close-circle-outline" size={32} color="#8b4a48" />
             </TouchableOpacity>
           </View>
-        ) : null}
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-      </View>
-    );
-  }
-
-  if (activeTab === 'qr') {
-    return (
-      <View style={styles.container}>
-        <View style={styles.subHeader}>
-          <TouchableOpacity onPress={() => setActiveTab('list')} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={20} color="#4d6048" />
-            <Text style={styles.backButtonText}>戻る</Text>
-          </TouchableOpacity>
-          <Text style={styles.subHeaderTitle}>マイQRコード</Text>
-        </View>
-        <View style={styles.qrContainer}>
-          {qrValue ? (
-            <View style={styles.qrCodeWrapper}>
-              <QRCode value={qrValue} size={180} color="#1f1f1f" backgroundColor="#FFFFFF" />
-            </View>
-          ) : <ActivityIndicator color="#267a3f" />}
-          <Text style={styles.qrDescription}>相手に読み取ってもらい{`\n`}フレンドを追加してください</Text>
-        </View>
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.topActionContainer}>
-        <TouchableOpacity style={styles.topActionButton} onPress={() => setActiveTab('search')}>
-          <Ionicons name="person-add-outline" size={24} color="#333" />
-          <Text style={styles.topActionText}>ID検索</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.topActionButton} onPress={openQR}>
-          <Ionicons name="qr-code-outline" size={24} color="#333" />
-          <Text style={styles.topActionText}>QRコード</Text>
-        </TouchableOpacity>
-      </View>
-      <TouchableOpacity style={styles.pendingRequestButton} onPress={() => setShowRequests((value) => !value)}>
-        <Text style={styles.pendingRequestText}>保留中の申請 {incoming.length > 0 ? `(${incoming.length})` : ''}</Text>
-        <Ionicons name={showRequests ? 'chevron-up' : 'chevron-down'} size={20} color="#666" />
-      </TouchableOpacity>
-      {showRequests ? incoming.map((request) => (
-        <View key={request.id} style={styles.requestRow}>
-          <ProfileAvatar profileImage={request.user.profileImage} name={request.user.name} size={36} />
-          <View style={styles.friendTextArea}>
-            <Text style={styles.friendName}>{request.user.name}</Text>
-            <Text style={styles.userId}>@{request.user.userId}</Text>
-          </View>
-          <TouchableOpacity onPress={() => respondRequest(request.id, 'accept')} disabled={isLoading}>
-            <Ionicons name="checkmark-circle" size={27} color="#267a3f" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => respondRequest(request.id, 'reject')} disabled={isLoading}>
-            <Ionicons name="close-circle-outline" size={27} color="#8b4a48" />
-          </TouchableOpacity>
-        </View>
-      )) : null}
-      <View style={styles.friendListSection}>
-        <Text style={styles.sectionTitle}>フレンド</Text>
-        <FlatList
-          data={friends}
-          keyExtractor={(item) => item.userId}
-          scrollEnabled={false}
-          ListEmptyComponent={<Text style={styles.emptyText}>フレンドがいません</Text>}
-          renderItem={({ item }) => (
-            <View style={styles.friendListItem}>
-              <ProfileAvatar profileImage={item.profileImage} name={item.name} size={40} />
-              <View style={styles.friendTextArea}>
-                <Text style={styles.friendName}>{item.name}</Text>
-                <Text style={styles.userId}>@{item.userId}</Text>
-              </View>
-            </View>
-          )}
-        />
-      </View>
+        )}
+      />
       {message ? <Text style={styles.message}>{message}</Text> : null}
     </View>
   );
@@ -279,11 +350,7 @@ const styles = StyleSheet.create({
   friendName: { flex: 1, fontSize: 16, color: '#333' },
   userId: { fontSize: 12, color: '#737873', marginTop: 2 },
   emptyText: { fontSize: 14, color: '#707870', paddingVertical: 12 },
-  requestRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#d2dfd2' },
-  subHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, position: 'relative' },
-  backButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#c5e8c5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#4d6048', position: 'absolute', left: 0, zIndex: 1 },
-  backButtonText: { fontSize: 12, color: '#4d6048', fontWeight: 'bold', marginLeft: 2 },
-  subHeaderTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: '#333' },
+  requestRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#d2dfd2' },
   searchRow: { flexDirection: 'row', gap: 8, marginBottom: 24 },
   input: { flex: 1, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CCC', borderRadius: 8, padding: 12, fontSize: 16 },
   searchButton: { width: 48, borderRadius: 8, backgroundColor: '#267a3f', alignItems: 'center', justifyContent: 'center' },
