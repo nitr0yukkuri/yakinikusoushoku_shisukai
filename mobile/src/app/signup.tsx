@@ -119,7 +119,7 @@ export default function SignUpScreen() {
               <Text style={styles.inputLabel}>ユーザーID</Text>
               <TextInput
                 style={[styles.input, userIdError ? styles.inputError : null]}
-                placeholder="半角英数字・_で入力"
+                placeholder="半角英数字で入力"
                 placeholderTextColor="#A0A0A0"
                 value={userId}
                 onChangeText={handleUserIdChange}

@@ -2,7 +2,7 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, View, Image, TouchableOpacity } from 'react-native';
+import { Platform, StyleSheet, View, Image, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useProfile, UserProfile } from '../contexts/profile-context';
@@ -20,6 +20,17 @@ const webClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
 const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
 const apiUrl = getApiUrl();
+
+const readWebIdTokenFromLocation = () => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
+
+  const params = new URLSearchParams(
+    window.location.hash.startsWith('#')
+      ? window.location.hash.slice(1)
+      : window.location.search.slice(1),
+  );
+  return params.get('id_token') ?? '';
+};
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -68,13 +79,29 @@ export default function LoginScreen() {
   }, [loginWithBackend, response]);
 
   useEffect(() => {
+    const idToken = readWebIdTokenFromLocation();
+    if (!idToken) return;
+
+    window.history.replaceState(null, '', window.location.pathname);
+    loginWithBackend(idToken);
+  }, [loginWithBackend]);
+
+  useEffect(() => {
     if (!isHydrated || !profile || isOAuthLoginRef.current) return;
     router.replace(profile.userId ? '/home' : '/signup');
   }, [isHydrated, profile, router]);
 
   const handleGoogleLogin = () => {
     if (!canLogin) return;
-    promptAsync();
+
+    if (Platform.OS === 'web' && request?.url && typeof window !== 'undefined') {
+      window.location.assign(request.url);
+      return;
+    }
+
+    promptAsync().catch((error: Error) => {
+      console.error('Google Login Failed:', error.message);
+    });
   };
 
   return (
