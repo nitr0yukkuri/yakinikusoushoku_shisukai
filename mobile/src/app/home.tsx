@@ -14,7 +14,12 @@ import { AppMap } from '../components/AppMap';
 import { ArrivalTimeBadge } from '../components/ArrivalTimeBadge';
 import { CalendarView } from '../components/CalendarView';
 import { Footer } from '../components/Footer';
-import { FriendPanel } from '../components/FriendPanel';
+import { 
+  FriendPanel, 
+  FriendSearchPanel, 
+  FriendQRPanel ,
+  FriendRequestsPanel
+} from '../components/FriendPanel';
 import MeetupSettingForm from '../components/meetupSettingForm';
 import { NotificationPanel } from '../components/NotificationPanel';
 import PastimeSpotPanel from '../components/PastimeSpotPanel';
@@ -123,6 +128,10 @@ export default function HomeScreen() {
     setEditingMeetupId(null);
   };
 
+  const [isFriendSearchVisible, setFriendSearchVisible] = useState(false);
+  const [isFriendQRVisible, setFriendQRVisible] = useState(false);
+  const [isFriendRequestsVisible, setFriendRequestsVisible] = useState(false);
+
   return (
     <View style={styles.container}>
       <AppMap
@@ -205,7 +214,11 @@ export default function HomeScreen() {
             title="フレンド"
             icon="people-outline"
           >
-            <FriendPanel />
+            <FriendPanel 
+              onOpenSearch={() => setFriendSearchVisible(true)}
+              onOpenQR={() => setFriendQRVisible(true)}
+              onOpenRequests={() => setFriendRequestsVisible(true)}
+            />
           </Popup>
 
           <Popup
@@ -224,6 +237,39 @@ export default function HomeScreen() {
                 setProfilePopupVisible(false)
               }
             />
+          </Popup>
+
+          <Popup
+            visible={isFriendSearchVisible}
+            onClose={() => setFriendSearchVisible(false)}
+            title="ID検索"
+            icon="person-add-outline"
+            slideDirection="right" // 横からスライド
+            showBackButton         // 戻るボタンを表示
+          >
+            <FriendSearchPanel />
+          </Popup>
+
+          <Popup
+            visible={isFriendQRVisible}
+            onClose={() => setFriendQRVisible(false)}
+            title="マイQRコード"
+            icon="qr-code-outline"
+            slideDirection="right" // 横からスライド
+            showBackButton         // 戻るボタンを表示
+          >
+            <FriendQRPanel />
+          </Popup>
+
+          <Popup
+            visible={isFriendRequestsVisible}
+            onClose={() => setFriendRequestsVisible(false)}
+            title="保留中の申請"
+            icon="mail-unread-outline"
+            slideDirection="right"
+            showBackButton
+          >
+            <FriendRequestsPanel />
           </Popup>
 
           <Popup
