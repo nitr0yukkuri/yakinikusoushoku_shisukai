@@ -7,7 +7,6 @@ import {
   SafeAreaView,
   Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
 import { AppMap } from '../components/AppMap';
@@ -22,22 +21,16 @@ import { Popup } from '../components/Popup';
 import ProfileEditSection from '../components/ProfileEditSection';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import SettingsPanel from '../components/SettingsPanel';
+import SystemSettingsPanel from '../components/SystemSettingsPanel';
+import PastimeSettingsPanel from '../components/PastimeSettingsPanel';
 import { useProfile } from '../contexts/profile-context';
 import { useMeetupSession } from '../hooks/use-meetup-session';
 import { useNotifications } from '../hooks/use-notifications';
 import { getProfileImageSignature } from '../utils/profile-image';
 
-const pastimeOptions = [
-  'カフェ',
-  'カラオケ',
-  'ファミレス',
-  'ゲーム',
-  'ジム',
-];
-
 export default function HomeScreen() {
   const router = useRouter();
-  const { profile, avatarUrl, logout, token } = useProfile();
+  const { profile, avatarUrl, token } = useProfile();
   const {
     activeMeetup,
     etaMinutes,
@@ -60,25 +53,15 @@ export default function HomeScreen() {
   } = useNotifications(token);
 
   const [isPopupVisible, setPopupVisible] = useState(false);
-  const [isProfilePopupVisible, setProfilePopupVisible] =
-    useState(false);
-  const [isSettingsVisible, setSettingsVisible] =
-    useState(false);
+  const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
+  const [isSettingsVisible, setSettingsVisible] = useState(false);
   const [isSystemVisible, setSystemVisible] = useState(false);
-  const [isPastimeVisible, setPastimeVisible] =
-    useState(false);
-  const [isCalendarPopupVisible, setCalendarPopupVisible] =
-    useState(false);
-  const [isMeetupSettingVisible, setMeetupSettingVisible] =
-    useState(false);
-  const [isFriendPopupVisible, setFriendPopupVisible] =
-    useState(false);
-  const [isSpotPopupVisible, setSpotPopupVisible] =
-    useState(false);
+  const [isPastimeVisible, setPastimeVisible] = useState(false);
+  const [isCalendarPopupVisible, setCalendarPopupVisible] = useState(false);
+  const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
+  const [isFriendPopupVisible, setFriendPopupVisible] = useState(false);
+  const [isSpotPopupVisible, setSpotPopupVisible] = useState(false);
 
-  const [selectedPastimes, setSelectedPastimes] = useState<
-    string[]
-  >([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [editingMeetupId, setEditingMeetupId] = useState<number | null>(null);
 
@@ -104,19 +87,6 @@ export default function HomeScreen() {
   } : null, [activeMeetup]);
 
   const hasEvents = selectedEvents.length > 0;
-
-  const togglePastime = (option: string) => {
-    setSelectedPastimes((previous) =>
-      previous.includes(option)
-        ? previous.filter((item) => item !== option)
-        : [...previous, option],
-    );
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    router.replace('/');
-  };
 
   const handleDayPress = (dateString: string) => {
     setSelectedDate(dateString);
@@ -361,43 +331,7 @@ export default function HomeScreen() {
             slideDirection="right"
             showBackButton
           >
-            <View style={styles.popupBody}>
-              <Text style={styles.popupLabel}>
-                メールアドレス
-              </Text>
-
-              <View style={styles.emailDisplay}>
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={16}
-                  color="#6b706b"
-                />
-                <Text
-                  style={styles.emailText}
-                  numberOfLines={1}
-                >
-                  {profile?.email || ''}
-                </Text>
-              </View>
-
-              <Text style={styles.deleteTitle}>
-                アカウントを削除
-              </Text>
-
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={handleLogout}
-              >
-                <Ionicons
-                  name="trash-outline"
-                  size={18}
-                  color="#b71c1c"
-                />
-                <Text style={styles.deleteButtonText}>
-                  削除する
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <SystemSettingsPanel />
           </Popup>
 
           <Popup
@@ -408,33 +342,7 @@ export default function HomeScreen() {
             slideDirection="right"
             showBackButton
           >
-            <View style={styles.chipGrid}>
-              {pastimeOptions.map((option) => {
-                const isSelected =
-                  selectedPastimes.includes(option);
-
-                return (
-                  <TouchableOpacity
-                    key={option}
-                    style={styles.chip}
-                    onPress={() => togglePastime(option)}
-                    activeOpacity={0.7}
-                  >
-                    {isSelected && (
-                      <Ionicons
-                        name="checkmark"
-                        size={16}
-                        color="#4d6048"
-                        style={styles.checkIcon}
-                      />
-                    )}
-                    <Text style={styles.chipText}>
-                      {option}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <PastimeSettingsPanel />
           </Popup>
         </View>
 
@@ -559,84 +467,5 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  popupBody: {
-    width: '100%',
-    alignItems: 'center',
-    marginTop: 40,
-  },
-  popupLabel: {
-    alignSelf: 'flex-start',
-    fontSize: 14,
-    color: '#333333',
-    marginBottom: 8,
-  },
-  emailDisplay: {
-    width: '100%',
-    height: 38,
-    borderWidth: 1,
-    borderColor: '#b7bdb7',
-    backgroundColor: '#e6e9e6',
-    paddingHorizontal: 10,
-    marginBottom: 28,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  emailText: {
-    color: '#6b706b',
-    fontSize: 14,
-    flex: 1,
-  },
-  deleteTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1f1f1f',
-    marginBottom: 14,
-  },
-  deleteButton: {
-    minWidth: 150,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 1,
-    borderColor: '#e57373',
-    backgroundColor: '#ffcdd2',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  deleteButtonText: {
-    color: '#b71c1c',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  chipGrid: {
-    width: '100%',
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-    gap: 10,
-    paddingHorizontal: 6,
-    marginTop: 120,
-  },
-  chip: {
-    width: '31%',
-    borderWidth: 1,
-    borderColor: '#4d6048',
-    backgroundColor: '#f6fff1',
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  checkIcon: {
-    position: 'absolute',
-    left: 6,
-  },
-  chipText: {
-    fontSize: 13,
-    color: '#1f1f1f',
-    fontWeight: '600',
   },
 });
