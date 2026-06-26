@@ -27,7 +27,9 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
   const { token } = useProfile();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
+  const [loadedFriendsForToken, setLoadedFriendsForToken] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const isLoadingFriends = Boolean(token) && loadedFriendsForToken !== token;
 
   const loadFriends = useCallback(async () => {
     if (!token) return;
@@ -54,6 +56,7 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
       } catch (error) {
         if (!cancelled) setMessage(toUserErrorMessage(error, 'フレンドを取得できませんでした'));
       } finally {
+        if (!cancelled) setLoadedFriendsForToken(token ?? null);
         if (!cancelled) refreshTimer = setTimeout(refreshFriends, 3000);
       }
     };
@@ -63,7 +66,7 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [loadFriends]);
+  }, [loadFriends, token]);
 
   return (
     <View style={styles.container}>
@@ -80,7 +83,9 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
       
       {/* ★変更: タップでポップアップを開くようにし、アイコンを横矢印に変更 */}
       <TouchableOpacity style={styles.pendingRequestButton} onPress={onOpenRequests}>
-        <Text style={styles.pendingRequestText}>保留中の申請 {incoming.length > 0 ? `(${incoming.length})` : ''}</Text>
+        <Text style={styles.pendingRequestText}>
+          {isLoadingFriends ? '保留中の申請を読み込み中...' : `保留中の申請 ${incoming.length > 0 ? `(${incoming.length})` : ''}`}
+        </Text>
         <Ionicons name="chevron-forward" size={20} color="#666" />
       </TouchableOpacity>
 
@@ -90,7 +95,14 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
           data={friends}
           keyExtractor={(item) => item.userId}
           scrollEnabled={false}
-          ListEmptyComponent={<Text style={styles.emptyText}>フレンドがいません</Text>}
+          ListEmptyComponent={(
+            <View style={styles.inlineLoadingState}>
+              {isLoadingFriends ? <ActivityIndicator size="small" color="#267a3f" /> : null}
+              <Text style={styles.emptyText}>
+                {isLoadingFriends ? 'フレンドを読み込み中...' : 'フレンドがいません'}
+              </Text>
+            </View>
+          )}
           renderItem={({ item }) => (
             <View style={styles.friendListItem}>
               <ProfileAvatar profileImage={item.profileImage} name={item.name} size={40} />
@@ -178,7 +190,12 @@ export const FriendSearchPanel: React.FC = () => {
         </TouchableOpacity>
       </View>
       <Text style={styles.sectionTitle}>検索結果</Text>
-      {isLoading ? <ActivityIndicator color="#267a3f" /> : null}
+      {isLoading ? (
+        <View style={styles.inlineLoadingState}>
+          <ActivityIndicator size="small" color="#267a3f" />
+          <Text style={styles.emptyText}>検索中...</Text>
+        </View>
+      ) : null}
       {searchResult ? (
         <View style={styles.searchResultItem}>
           <ProfileAvatar profileImage={searchResult.profile.profileImage} name={searchResult.profile.name} size={40} />
@@ -239,7 +256,12 @@ export const FriendQRPanel: React.FC = () => {
           <View style={styles.qrCodeWrapper}>
             <QRCode value={qrValue} size={180} color="#1f1f1f" backgroundColor="#FFFFFF" />
           </View>
-        ) : <ActivityIndicator color="#267a3f" />}
+        ) : (
+          <View style={styles.centerLoadingState}>
+            <ActivityIndicator color="#267a3f" />
+            <Text style={styles.emptyText}>QRコードを読み込み中...</Text>
+          </View>
+        )}
         <Text style={styles.qrDescription}>相手に読み取ってもらい{`\n`}フレンドを追加してください</Text>
       </View>
       {message ? <Text style={styles.message}>{message}</Text> : null}
@@ -254,7 +276,9 @@ export const FriendRequestsPanel: React.FC = () => {
   const { token } = useProfile();
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadedRequestsForToken, setLoadedRequestsForToken] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const isLoadingRequests = Boolean(token) && loadedRequestsForToken !== token;
 
   const loadRequests = useCallback(async () => {
     if (!token) return;
@@ -267,6 +291,8 @@ export const FriendRequestsPanel: React.FC = () => {
       setIncoming(body.incoming || []);
     } catch (error) {
       setMessage(toUserErrorMessage(error, '申請を取得できませんでした'));
+    } finally {
+      setLoadedRequestsForToken(token ?? null);
     }
   }, [token]);
 
@@ -314,7 +340,14 @@ export const FriendRequestsPanel: React.FC = () => {
       <FlatList
         data={incoming}
         keyExtractor={(item) => String(item.id)}
-        ListEmptyComponent={<Text style={styles.emptyText}>保留中の申請はありません</Text>}
+        ListEmptyComponent={(
+          <View style={styles.inlineLoadingState}>
+            {isLoadingRequests ? <ActivityIndicator size="small" color="#267a3f" /> : null}
+            <Text style={styles.emptyText}>
+              {isLoadingRequests ? '保留中の申請を読み込み中...' : '保留中の申請はありません'}
+            </Text>
+          </View>
+        )}
         renderItem={({ item: request }) => (
           <View style={styles.requestRow}>
             <ProfileAvatar profileImage={request.user.profileImage} name={request.user.name} size={40} />
@@ -350,6 +383,8 @@ const styles = StyleSheet.create({
   friendName: { flex: 1, fontSize: 16, color: '#333' },
   userId: { fontSize: 12, color: '#737873', marginTop: 2 },
   emptyText: { fontSize: 14, color: '#707870', paddingVertical: 12 },
+  inlineLoadingState: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12 },
+  centerLoadingState: { alignItems: 'center', gap: 8, paddingVertical: 12 },
   requestRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#d2dfd2' },
   searchRow: { flexDirection: 'row', gap: 8, marginBottom: 24 },
   input: { flex: 1, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CCC', borderRadius: 8, padding: 12, fontSize: 16 },

@@ -1,6 +1,6 @@
 // components/MeetupSettingForm.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Platform, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { ActivityIndicator, Alert, Platform, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import * as Location from 'expo-location';
 import { AppMap } from './AppMap';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -65,6 +65,7 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [friendSearch, setFriendSearch] = useState('');
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [loadedFriendsForToken, setLoadedFriendsForToken] = useState<string | null>(null);
   const [saveError, setSaveError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -75,6 +76,7 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
     ? friends.filter((friend) => friend.name.toLowerCase().includes(friendSearchQuery) || friend.userId.toLowerCase().includes(friendSearchQuery))
     : [];
   const selectedFriendItems = friends.filter((friend) => selectedFriends.includes(friend.userId));
+  const isLoadingFriends = Boolean(token) && loadedFriendsForToken !== token;
 
   useEffect(() => {
     if (!token || !existingMeetup) return;
@@ -109,7 +111,8 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
         if (!response.ok) throw new Error(body.error || 'フレンドを取得できませんでした');
         setFriends(body.friends || []);
       })
-      .catch((error) => setSaveError(toUserErrorMessage(error, 'フレンドを取得できませんでした')));
+      .catch((error) => setSaveError(toUserErrorMessage(error, 'フレンドを取得できませんでした')))
+      .finally(() => setLoadedFriendsForToken(token));
   }, [token]);
 
   useEffect(() => {
@@ -351,7 +354,13 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
             </TouchableOpacity>
           );
         })}
-        {friendSearchQuery && filteredFriends.length === 0 && (
+        {friendSearchQuery && isLoadingFriends && (
+          <View style={styles.inlineLoadingState}>
+            <ActivityIndicator size="small" color="#267a3f" />
+            <Text style={styles.noFriendText}>フレンドを読み込み中...</Text>
+          </View>
+        )}
+        {friendSearchQuery && !isLoadingFriends && filteredFriends.length === 0 && (
           <Text style={styles.noFriendText}>該当するフレンドはいません</Text>
         )}
       </View>
@@ -415,6 +424,7 @@ const styles = StyleSheet.create({
   friendChip: { borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 14, marginBottom: 8, marginRight: 8, flexDirection: 'row', alignItems: 'center' },
   friendText: { color: '#333' },
   noFriendText: { color: '#888', fontSize: 13, marginTop: 4 },
+  inlineLoadingState: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
   
   mapWindow: {
     width: '100%',
