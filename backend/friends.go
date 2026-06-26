@@ -16,7 +16,7 @@ import (
 )
 
 const friendProfileColumns = `
-	u.user_id,
+	COALESCE(u.user_id, ''),
 	COALESCE(u.name, ''),
 	COALESCE(NULLIF(u.profile_image, ''), NULLIF(u.picture_url, ''), '')
 `
@@ -335,6 +335,23 @@ func createFriendRequestHandler(w http.ResponseWriter, r *http.Request, pool *pg
 		return
 	}
 	defer tx.Rollback(ctx)
+
+	var requesterUserID string
+	err = tx.QueryRow(ctx, `
+		SELECT COALESCE(user_id, '') FROM auth_users WHERE id = $1
+	`, userNo).Scan(&requesterUserID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSONError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to create friend request")
+		return
+	}
+	if requesterUserID == "" {
+		writeJSONError(w, http.StatusConflict, "profile setup is required")
+		return
+	}
 
 	var targetID int64
 	err = tx.QueryRow(ctx, `SELECT id FROM auth_users WHERE user_id = $1`, req.UserID).Scan(&targetID)

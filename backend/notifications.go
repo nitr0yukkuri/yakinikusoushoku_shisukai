@@ -102,7 +102,7 @@ func listNotifications(w http.ResponseWriter, r *http.Request, pool *pgxpool.Poo
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	rows, err := pool.Query(ctx, `
-		SELECT n.id, n.type, u.user_id, COALESCE(u.name, ''),
+		SELECT n.id, n.type, COALESCE(u.user_id, ''), COALESCE(u.name, ''),
 			COALESCE(NULLIF(u.profile_image, ''), NULLIF(u.picture_url, ''), ''),
 			n.friend_request_id, COALESCE(fr.status, ''),
 			n.meetup_id, COALESCE(m.place_name, ''), m.scheduled_at,

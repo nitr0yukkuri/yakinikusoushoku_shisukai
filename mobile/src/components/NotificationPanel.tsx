@@ -60,7 +60,12 @@ export function NotificationPanel({
   };
 
   if (isLoading) {
-    return <ActivityIndicator style={styles.loading} color="#267a3f" />;
+    return (
+      <View style={styles.loadingState}>
+        <ActivityIndicator color="#267a3f" />
+        <Text style={styles.emptyText}>通知を読み込み中...</Text>
+      </View>
+    );
   }
 
   if (notifications.length === 0) {
@@ -183,7 +188,7 @@ const styles = StyleSheet.create({
   },
   acceptButton: { backgroundColor: '#2f9e50' },
   rejectButton: { backgroundColor: '#bc4d4d' },
-  loading: { paddingVertical: 36 },
+  loadingState: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 10 },
   emptyState: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 10 },
   emptyText: { color: '#626b64', fontSize: 14 },
   error: { color: '#a33a32', fontSize: 12, paddingVertical: 10, textAlign: 'center' },
