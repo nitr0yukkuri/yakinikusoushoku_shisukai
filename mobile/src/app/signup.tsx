@@ -16,6 +16,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useProfile } from '../contexts/profile-context';
 import { getPersistableProfileImage } from '../utils/profile-image';
+import { toUserErrorMessage } from '../utils/user-error';
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -50,7 +51,7 @@ export default function SignUpScreen() {
         router.replace('/home');
       }
     } catch (error) {
-      Alert.alert('エラー', error instanceof Error ? error.message : 'プロフィールの保存に失敗しました。');
+      Alert.alert('エラー', toUserErrorMessage(error, 'プロフィールの保存に失敗しました。'));
     } finally {
       setIsSubmitting(false);
     }
@@ -82,8 +83,8 @@ export default function SignUpScreen() {
 
   const handleUserIdChange = (text: string) => {
     setUserId(text);
-    const isValid = /^[a-zA-Z0-9]*$/.test(text);
-    setUserIdError(!isValid && text.length > 0 ? '半角英数字のみで入力してください' : '');
+    const isValid = /^[a-zA-Z0-9_]*$/.test(text);
+    setUserIdError(!isValid && text.length > 0 ? '半角英数字またはアンダースコアで入力してください' : '');
   };
 
   return (
@@ -118,7 +119,7 @@ export default function SignUpScreen() {
               <Text style={styles.inputLabel}>ユーザーID</Text>
               <TextInput
                 style={[styles.input, userIdError ? styles.inputError : null]}
-                placeholder="半角英数字で入力"
+                placeholder="半角英数字・_で入力"
                 placeholderTextColor="#A0A0A0"
                 value={userId}
                 onChangeText={handleUserIdChange}

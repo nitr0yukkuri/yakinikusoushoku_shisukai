@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 
 import { useProfile } from '../contexts/profile-context';
 import { getApiUrl } from '../utils/api-url';
+import { toUserErrorMessage } from '../utils/user-error';
 import { AppMap } from './AppMap';
 
 type Meetup = {
@@ -92,7 +93,7 @@ export default function PastimeSpotPanel() {
         setMeetup(available[0] || null);
       })
       .catch((reason) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : '待ち合わせを取得できませんでした');
+        if (!cancelled) setError(toUserErrorMessage(reason, '待ち合わせを取得できませんでした'));
       })
       .finally(() => {
         if (!cancelled) setIsLoadingMeetup(false);
@@ -131,7 +132,7 @@ export default function PastimeSpotPanel() {
       .catch((reason) => {
         if (cancelled) return;
         setSpots([]);
-        setError(reason instanceof Error ? reason.message : '周辺スポットを取得できませんでした');
+        setError(toUserErrorMessage(reason, '周辺スポットを取得できませんでした'));
       })
       .finally(() => {
         if (!cancelled) setIsLoadingSpots(false);

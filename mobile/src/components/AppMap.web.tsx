@@ -1,18 +1,22 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle, ActivityIndicator } from 'react-native';
 import { getAvatarInitials } from '../utils/avatar';
+import { getApiUrl, getWebSocketUrl } from '../utils/api-url';
 import { getProfileImageSignature } from '../utils/profile-image';
 
 const INITIAL_REGION = { lat: 35.681236, lng: 139.767125 };
 const GOOGLE_MAPS_SCRIPT_ID = 'google-maps-javascript-api';
 const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
-const WS_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
+
+const WS_URL = getWebSocketUrl();
+const API_URL = getApiUrl();
 
 let googleMapsScriptPromise: Promise<void> | null = null;
 const markerUrlCache = new Map<string, Promise<string>>();
 const markerIconVersions = new WeakMap<object, string>();
 const CURRENT_LOCATION_RING = '#000000';
+const DEMO_LOCATION_STEP_METERS = 25;
+const keyboardLocationControlsEnabled = process.env.NODE_ENV !== 'production';
 
 type AppMapProps = {
   style?: StyleProp<ViewStyle>;
@@ -21,12 +25,29 @@ type AppMapProps = {
   userId?: string;
   userName?: string;
   profileImage?: string;
+  followCurrentLocation?: boolean;
   selectedLocation?: {
     latitude: number;
     longitude: number;
   } | null;
   locationQuery?: string;
   onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
+  onCurrentLocationChange?: (
+    coordinate: { latitude: number; longitude: number },
+    options?: { forceETARefresh?: boolean },
+  ) => void;
+  onWebSocketDisconnect?: () => void;
+};
+
+type RemoteLocationMessage = {
+  type: 'LOCATION_UPDATE';
+  userId: string;
+  userName?: string;
+  profileVersion?: string;
+  profileImage?: string;
+  lat: number;
+  lng: number;
+  timestamp: number;
 };
 
 const fallbackMarkerUrl = (name: string, size = 48, ringColor?: string) => {
@@ -178,9 +199,12 @@ export const AppMap = ({
   userId: propUserId,
   userName: propUserName,
   profileImage,
+  followCurrentLocation = false,
   selectedLocation,
   locationQuery,
   onLocationSelect,
+  onCurrentLocationChange,
+  onWebSocketDisconnect,
 }: AppMapProps) => {
   const [fallbackUserId] = useState(() => `user_${Math.floor(Math.random() * 10000)}`);
   const userId = propUserId || fallbackUserId;
@@ -191,15 +215,20 @@ export const AppMap = ({
   const mapInstanceRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
+  const demoPositionActiveRef = useRef(false);
 
   const otherMarkersRef = useRef<Record<string, any>>({});
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
+  const pendingLocationsRef = useRef<Record<string, RemoteLocationMessage>>({});
   const myMarkerRef = useRef<any>(null);
   const selectedMarkerRef = useRef<any>(null);
   const selectedLocationRef = useRef(selectedLocation);
   const onLocationSelectRef = useRef(onLocationSelect);
+  const onCurrentLocationChangeRef = useRef(onCurrentLocationChange);
+  const onWebSocketDisconnectRef = useRef(onWebSocketDisconnect);
 
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isCurrentLocationResolved, setIsCurrentLocationResolved] = useState(!followCurrentLocation);
 
   useEffect(() => {
     selectedLocationRef.current = selectedLocation;
@@ -208,6 +237,23 @@ export const AppMap = ({
   useEffect(() => {
     onLocationSelectRef.current = onLocationSelect;
   }, [onLocationSelect]);
+
+  useEffect(() => {
+    onCurrentLocationChangeRef.current = onCurrentLocationChange;
+    const currentPosition = currentPositionRef.current;
+    if (!currentPosition || !onCurrentLocationChange) return;
+    const timer = window.setTimeout(() => {
+      onCurrentLocationChangeRef.current?.({
+        latitude: currentPosition.lat,
+        longitude: currentPosition.lng,
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [onCurrentLocationChange]);
+
+  useEffect(() => {
+    onWebSocketDisconnectRef.current = onWebSocketDisconnect;
+  }, [onWebSocketDisconnect]);
 
   useEffect(() => {
     profileRef.current = { userName, profileImage };
@@ -230,51 +276,85 @@ export const AppMap = ({
     }
   }, [profileImage, userId, userName]);
 
+  const applyRemoteLocation = useCallback((data: RemoteLocationMessage) => {
+    const browserWindow = window as any;
+    if (!browserWindow.google?.maps?.Marker || !mapInstanceRef.current) return false;
+
+    const position = { lat: data.lat, lng: data.lng };
+    const markerName = data.userName || data.userId;
+    const profileVersion = data.profileVersion || markerName;
+
+    if (otherMarkersRef.current[data.userId]) {
+      otherMarkersRef.current[data.userId].setPosition(position);
+      otherMarkersRef.current[data.userId].setTitle(markerName);
+    } else {
+      otherMarkersRef.current[data.userId] = new browserWindow.google.maps.Marker({
+        position,
+        map: mapInstanceRef.current,
+        title: markerName,
+      });
+      setMarkerIcon(browserWindow, otherMarkersRef.current[data.userId], markerName, data.profileImage, 40);
+    }
+
+    if (markerProfileVersionsRef.current[data.userId] !== profileVersion) {
+      markerProfileVersionsRef.current[data.userId] = profileVersion;
+      fetch(`${API_URL}/profiles?userId=${encodeURIComponent(data.userId)}`)
+        .then(async (response) => {
+          if (!response.ok) throw new Error('Profile fetch failed.');
+          return response.json();
+        })
+        .then(({ profile }) => {
+          const marker = otherMarkersRef.current[data.userId];
+          if (!marker) return;
+          marker.setTitle(profile.name || data.userId);
+          setMarkerIcon(browserWindow, marker, profile.name || data.userId, profile.profileImage, 40);
+        })
+        .catch((error) => {
+          delete markerProfileVersionsRef.current[data.userId];
+          console.warn('Failed to load marker profile:', error);
+        });
+    }
+
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    Object.entries(pendingLocationsRef.current).forEach(([remoteUserId, location]) => {
+      if (applyRemoteLocation(location)) {
+        delete pendingLocationsRef.current[remoteUserId];
+      }
+    });
+  }, [applyRemoteLocation, isInitialized]);
+
   useEffect(() => {
     if (!wsTicket) return;
+    let disposed = false;
+    let reconnectTimer: number | undefined;
     const ws = new WebSocket(`${WS_URL}?ticket=${encodeURIComponent(wsTicket)}`);
     wsRef.current = ws;
 
+    ws.onopen = () => {
+      const currentPosition = currentPositionRef.current;
+      if (!currentPosition) return;
+      ws.send(JSON.stringify({
+        type: 'LOCATION_UPDATE',
+        userId,
+        userName: profileRef.current.userName,
+        profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
+        ...currentPosition,
+        timestamp: Date.now(),
+      }));
+    };
+
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
+        const data = JSON.parse(event.data) as RemoteLocationMessage;
         if (data.type === 'LOCATION_UPDATE' && data.userId !== userId) {
-          const browserWindow = window as any;
-          if (!browserWindow.google?.maps?.Marker || !mapInstanceRef.current) return;
-
-          const position = { lat: data.lat, lng: data.lng };
-          const markerName = data.userName || data.userId;
-          const profileVersion = data.profileVersion || markerName;
-
-          if (otherMarkersRef.current[data.userId]) {
-            otherMarkersRef.current[data.userId].setPosition(position);
-            otherMarkersRef.current[data.userId].setTitle(markerName);
-          } else {
-            otherMarkersRef.current[data.userId] = new browserWindow.google.maps.Marker({
-              position,
-              map: mapInstanceRef.current,
-              title: markerName,
-            });
-            setMarkerIcon(browserWindow, otherMarkersRef.current[data.userId], markerName, data.profileImage, 40);
-          }
-
-          if (markerProfileVersionsRef.current[data.userId] !== profileVersion) {
-            markerProfileVersionsRef.current[data.userId] = profileVersion;
-            fetch(`${API_URL}/profiles?userId=${encodeURIComponent(data.userId)}`)
-              .then(async (response) => {
-                if (!response.ok) throw new Error('Profile fetch failed.');
-                return response.json();
-              })
-              .then(({ profile }) => {
-                const marker = otherMarkersRef.current[data.userId];
-                if (!marker) return;
-                marker.setTitle(profile.name || data.userId);
-                setMarkerIcon(browserWindow, marker, profile.name || data.userId, profile.profileImage, 40);
-              })
-              .catch((error) => {
-                delete markerProfileVersionsRef.current[data.userId];
-                console.warn('Failed to load marker profile:', error);
-              });
+          pendingLocationsRef.current[data.userId] = data;
+          if (applyRemoteLocation(data)) {
+            delete pendingLocationsRef.current[data.userId];
           }
         }
       } catch (error) {
@@ -282,15 +362,26 @@ export const AppMap = ({
       }
     };
 
+    ws.onclose = () => {
+      if (disposed) return;
+      onWebSocketDisconnectRef.current?.();
+      reconnectTimer = window.setInterval(() => {
+        onWebSocketDisconnectRef.current?.();
+      }, 3000);
+    };
+
     return () => {
+      disposed = true;
+      if (reconnectTimer !== undefined) window.clearInterval(reconnectTimer);
       ws.close();
       Object.values(otherMarkersRef.current).forEach((marker: any) => marker.setMap(null));
       otherMarkersRef.current = {};
       markerProfileVersionsRef.current = {};
+      pendingLocationsRef.current = {};
     };
-  }, [roomId, userId, wsTicket]);
+  }, [applyRemoteLocation, roomId, userId, wsTicket]);
 
-  const moveSelectedMarker = (position: { lat: number; lng: number }) => {
+  const moveSelectedMarker = (position: { lat: number; lng: number }, shouldPan = true) => {
     const browserWindow = window as any;
     if (!browserWindow.google?.maps?.Marker || !mapInstanceRef.current) return;
 
@@ -304,7 +395,7 @@ export const AppMap = ({
       });
     }
 
-    mapInstanceRef.current.panTo(position);
+    if (shouldPan) mapInstanceRef.current.panTo(position);
   };
 
   useEffect(() => {
@@ -317,8 +408,8 @@ export const AppMap = ({
     moveSelectedMarker({
       lat: selectedLocation.latitude,
       lng: selectedLocation.longitude,
-    });
-  }, [isInitialized, selectedLocation]);
+    }, !followCurrentLocation);
+  }, [followCurrentLocation, isInitialized, selectedLocation]);
 
   useEffect(() => {
     const browserWindow = window as any;
@@ -341,6 +432,57 @@ export const AppMap = ({
   }, [isInitialized, locationQuery, selectedLocation]);
 
   useEffect(() => {
+    if (!keyboardLocationControlsEnabled || !followCurrentLocation) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (target?.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select') return;
+
+      const currentPosition = currentPositionRef.current;
+      if (!currentPosition || !mapInstanceRef.current || !myMarkerRef.current) return;
+
+      event.preventDefault();
+      demoPositionActiveRef.current = true;
+
+      const stepMeters = event.shiftKey ? DEMO_LOCATION_STEP_METERS * 4 : DEMO_LOCATION_STEP_METERS;
+      const latitudeStep = stepMeters / 111320;
+      const longitudeScale = Math.max(Math.cos(currentPosition.lat * Math.PI / 180), 0.01);
+      const longitudeStep = stepMeters / (111320 * longitudeScale);
+      const nextPosition = {
+        lat: currentPosition.lat
+          + (event.key === 'ArrowUp' ? latitudeStep : event.key === 'ArrowDown' ? -latitudeStep : 0),
+        lng: currentPosition.lng
+          + (event.key === 'ArrowRight' ? longitudeStep : event.key === 'ArrowLeft' ? -longitudeStep : 0),
+      };
+
+      currentPositionRef.current = nextPosition;
+      myMarkerRef.current.setPosition(nextPosition);
+      mapInstanceRef.current.panTo(nextPosition);
+      onCurrentLocationChangeRef.current?.(
+        { latitude: nextPosition.lat, longitude: nextPosition.lng },
+        { forceETARefresh: true },
+      );
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'LOCATION_UPDATE',
+          userId,
+          userName: profileRef.current.userName,
+          profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
+          ...nextPosition,
+          timestamp: Date.now(),
+        }));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [followCurrentLocation, userId]);
+
+  useEffect(() => {
     let watchId: number | null = null;
     let mapClickListener: { remove: () => void } | null = null;
     let isMounted = true;
@@ -359,6 +501,10 @@ export const AppMap = ({
           disableDefaultUI: true,
           zoomControl: true,
         });
+        Object.values(otherMarkersRef.current).forEach((marker: any) => {
+          marker.setMap(mapInstanceRef.current);
+        });
+        selectedMarkerRef.current?.setMap(mapInstanceRef.current);
         setIsInitialized(true);
 
         mapClickListener = mapInstanceRef.current.addListener('click', (event: any) => {
@@ -380,17 +526,21 @@ export const AppMap = ({
 
         if (!navigator.geolocation) {
           console.warn('Geolocation is not supported by this browser.');
+          setIsCurrentLocationResolved(true);
           return;
         }
 
         let hasCurrentPosition = false;
         const applyCurrentPosition = (position: GeolocationPosition) => {
           if (!isMounted || !mapInstanceRef.current) return;
+          if (demoPositionActiveRef.current) return;
           const currentPos = {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           };
           currentPositionRef.current = currentPos;
+          setIsCurrentLocationResolved(true);
+          onCurrentLocationChangeRef.current?.({ latitude: currentPos.lat, longitude: currentPos.lng });
 
           if (myMarkerRef.current) {
             myMarkerRef.current.setMap(mapInstanceRef.current);
@@ -411,9 +561,9 @@ export const AppMap = ({
             );
           }
 
-          if (!hasCurrentPosition && !selectedLocationRef.current) {
+          if (followCurrentLocation || (!hasCurrentPosition && !selectedLocationRef.current)) {
             mapInstanceRef.current.panTo(currentPos);
-            mapInstanceRef.current.setZoom(16);
+            if (!hasCurrentPosition) mapInstanceRef.current.setZoom(16);
           }
           hasCurrentPosition = true;
 
@@ -431,7 +581,10 @@ export const AppMap = ({
 
         navigator.geolocation.getCurrentPosition(
           applyCurrentPosition,
-          (error) => console.warn('Initial geolocation failed:', error),
+          (error) => {
+            console.warn('Initial geolocation failed:', error);
+            setIsCurrentLocationResolved(true);
+          },
           { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 },
         );
         watchId = navigator.geolocation.watchPosition(
@@ -442,6 +595,7 @@ export const AppMap = ({
       } catch (error) {
         console.error('Google Maps init failed:', error);
         setIsInitialized(true);
+        setIsCurrentLocationResolved(true);
       }
     };
 
@@ -458,7 +612,7 @@ export const AppMap = ({
         myMarkerRef.current = null;
       }
     };
-  }, [userId]);
+  }, [followCurrentLocation, userId]);
 
   return (
     <View style={[styles.map, style]}>
@@ -467,7 +621,7 @@ export const AppMap = ({
         style: styles.mapCanvas,
       })}
 
-      {!isInitialized && (
+      {(!isInitialized || (followCurrentLocation && !isCurrentLocationResolved)) && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#00aa00" />
         </View>
