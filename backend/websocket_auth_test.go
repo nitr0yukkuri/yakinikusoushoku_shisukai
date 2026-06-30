@@ -30,3 +30,18 @@ func TestExpiredWSTicketIsRejected(t *testing.T) {
 		t.Fatal("expired ticket was accepted")
 	}
 }
+
+func TestOriginAllowedForLocalDevelopmentOriginsInProduction(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("ALLOWED_ORIGINS", "")
+
+	for _, origin := range []string{
+		"http://localhost:8081",
+		"http://127.0.0.1:8081",
+		"https://spicy-states-film.loca.lt",
+	} {
+		if !originAllowed(origin) {
+			t.Fatalf("originAllowed(%q) = false, want true", origin)
+		}
+	}
+}
