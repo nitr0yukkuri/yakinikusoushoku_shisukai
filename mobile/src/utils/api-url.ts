@@ -11,7 +11,20 @@ const getExpoHost = () => {
 export const getApiUrl = () => {
   const configuredUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8080';
 
-  if (Platform.OS === 'web') return configuredUrl;
+  if (Platform.OS === 'web') {
+    try {
+      const url = new URL(configuredUrl);
+      const isLocalPage =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      if (isLocalPage && url.hostname.endsWith('.loca.lt')) {
+        return 'http://localhost:8080';
+      }
+    } catch {
+      return configuredUrl;
+    }
+    return configuredUrl;
+  }
 
   try {
     const url = new URL(configuredUrl);
