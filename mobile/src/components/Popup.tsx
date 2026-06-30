@@ -4,7 +4,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// ModalPropsを外して独自に定義します
+// 🌟 追加：現在開いているポップアップの onClose を保持する変数
+let activePopupClose: (() => void) | null = null;
+
 interface PopupProps {
   visible: boolean;
   onClose: () => void;
@@ -24,20 +26,25 @@ export const Popup: React.FC<PopupProps> = ({
   message,
   children,
   icon = "notifications-outline",
-  sheetHeight = SCREEN_HEIGHT * 0.75, // 高さ75%くらいなはずたぶんきっと
+  sheetHeight = SCREEN_HEIGHT * 0.75,
   slideDirection = 'bottom',
   showBackButton = false,
 }) => {
   const [isRendered, setIsRendered] = useState(false);
   
-  // スライド用とフェード用の2つのアニメーションを準備
   const translateAnim = useRef(new Animated.Value(slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
+      // 🌟 追加：もし別のポップアップが開いていたら、そちらの onClose を発火させて閉じる
+      if (activePopupClose && activePopupClose !== onClose) {
+        activePopupClose();
+      }
+      // 🌟 追加：自分自身を「現在開いているポップアップ」として登録
+      activePopupClose = onClose;
+
       setIsRendered(true);
-      // 表示：スライドインと背景のフェードインを同時に実行
       Animated.parallel([
         Animated.timing(translateAnim, {
           toValue: 0,
@@ -51,7 +58,11 @@ export const Popup: React.FC<PopupProps> = ({
         })
       ]).start();
     } else {
-      // 非表示：スライドアウトと背景のフェードアウトを同時に実行
+      // 🌟 追加：自分が閉じられる時は、登録を解除する
+      if (activePopupClose === onClose) {
+        activePopupClose = null;
+      }
+
       Animated.parallel([
         Animated.timing(translateAnim, {
           toValue: slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT,
@@ -64,33 +75,28 @@ export const Popup: React.FC<PopupProps> = ({
           useNativeDriver: true,
         })
       ]).start(() => {
-        setIsRendered(false); // アニメーション完了後に完全に消す
+        setIsRendered(false);
       });
     }
-  }, [visible]);
+  }, [visible, onClose]); // onClose を依存配列に追加
 
-  // 開いていない時は何も描画しない
   if (!visible && !isRendered) return null;
 
   return (
     <View style={styles.absoluteContainer}>
-      {/* 背景（オーバーレイ） */}
       <TouchableWithoutFeedback onPress={onClose}>
         <Animated.View style={[styles.overlay, { opacity }]} />
       </TouchableWithoutFeedback>
 
-      {/* ボトムシート本体 */}
       <Animated.View style={[styles.popupContainer, { 
         height: sheetHeight, 
         transform: [ slideDirection === 'right' ? { translateX: translateAnim } : { translateY: translateAnim } ] 
       }]}>
         
-        {/* ドラッグハンドル */}
         <View style={styles.dragHandleWrapper}>
           <View style={styles.dragHandle} />
         </View>
 
-        {/* ヘッダー領域 */}
         <View style={styles.headerContainer}>
           <View style={styles.headerLeft}>
             {showBackButton ? (
@@ -111,7 +117,6 @@ export const Popup: React.FC<PopupProps> = ({
           </View>
         </View>
 
-        {/* コンテンツ領域 */}
         <ScrollView style={styles.contentContainer} contentContainerStyle={styles.contentInner} showsVerticalScrollIndicator={false}>
           {message && <Text style={styles.message}>{message}</Text>}
           {children}
@@ -126,7 +131,7 @@ const styles = StyleSheet.create({
   absoluteContainer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1000,
-    overflow: 'hidden', // フッター側にはみ出して表示されないようにする
+    overflow: 'hidden',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
