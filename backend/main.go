@@ -585,6 +585,10 @@ func validateGoogleIDToken(ctx context.Context, token string, clientIDs []string
 	return nil, fmt.Errorf("no configured Google client ID matched token audience: %s", strings.Join(errs, "; "))
 }
 
+// ==============================================================================
+// 🌟 修正ポイント: ここから下の関数を修正しました
+// ログイン時にカスタムプロフィール（名前など）をGoogle情報で上書きしないようにしています
+// ==============================================================================
 func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Payload) (authUser, error) {
 	email := claimString(payload.Claims, "email")
 	name := claimString(payload.Claims, "name")
@@ -597,10 +601,6 @@ func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Pa
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (google_sub) DO UPDATE SET
 			email = EXCLUDED.email,
-			name = CASE
-				WHEN auth_users.user_id IS NULL THEN EXCLUDED.name
-				ELSE auth_users.name
-			END,
 			picture_url = EXCLUDED.picture_url,
 			email_verified = EXCLUDED.email_verified,
 			updated_at = now()
