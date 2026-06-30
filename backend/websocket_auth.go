@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -129,6 +130,9 @@ func originAllowed(origin string) bool {
 	if origin == "" {
 		return true
 	}
+	if isLocalDevelopmentOrigin(origin) {
+		return true
+	}
 	if strings.ToLower(strings.TrimSpace(getEnv("ENV", "development"))) != "production" {
 		return true
 	}
@@ -138,6 +142,18 @@ func originAllowed(origin string) bool {
 		}
 	}
 	return false
+}
+
+func isLocalDevelopmentOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "localhost" ||
+		host == "127.0.0.1" ||
+		host == "::1" ||
+		strings.HasSuffix(host, ".loca.lt")
 }
 
 func getEnv(key, fallback string) string {
