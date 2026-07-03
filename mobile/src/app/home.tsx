@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   Image,
+  Alert, // ★追加
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
@@ -36,9 +37,14 @@ import { getProfileImageSignature } from '../utils/profile-image';
 export default function HomeScreen() {
   const router = useRouter();
   const { profile, avatarUrl, token } = useProfile();
+  
+  // ★追加：allArrived, arrivedUsers, sendArrival を受け取る
   const {
     activeMeetup,
     etaMinutes,
+    allArrived,
+    arrivedUsers,
+    sendArrival,
     meetups,
     reconnectWebSocket,
     refreshMeetups,
@@ -47,6 +53,7 @@ export default function HomeScreen() {
     scheduleData,
     wsTicket,
   } = useMeetupSession(token, profile?.userId);
+
   const {
     error: notificationError,
     isLoading: isLoadingNotifications,
@@ -116,9 +123,27 @@ export default function HomeScreen() {
         onCurrentLocationChange={reportCurrentLocation}
         onWebSocketDisconnect={reconnectWebSocket}
       />
+      
+      {/* ★変更：etaMinutes が null になれば非表示になる */}
       {activeMeetup && etaMinutes !== null ? (
         <ArrivalTimeBadge minutes={etaMinutes} style={styles.arrivalBadge} />
       ) : null}
+
+      {/* ★追加：自分が到着していない間だけ「到着ボタン」を表示する */}
+      {activeMeetup && !arrivedUsers.includes(profile?.userId || '') && (
+        <View style={styles.arriveButtonContainer} pointerEvents="box-none">
+          <TouchableOpacity 
+            style={styles.arriveButton}
+            onPress={() => {
+              sendArrival();
+              Alert.alert("到着しました！", "全員が到着するとタイマーが消えます。");
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.arriveButtonText}>到着！</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <SafeAreaView
         style={styles.safeArea}
@@ -214,8 +239,8 @@ export default function HomeScreen() {
             onClose={() => setFriendSearchVisible(false)}
             title="ID検索"
             icon="person-add-outline"
-            slideDirection="right" // 横からスライド
-            showBackButton         // 戻るボタンを表示
+            slideDirection="right"
+            showBackButton
           >
             <FriendSearchPanel />
           </Popup>
@@ -225,8 +250,8 @@ export default function HomeScreen() {
             onClose={() => setFriendQRVisible(false)}
             title="マイQRコード"
             icon="qr-code-outline"
-            slideDirection="right" // 横からスライド
-            showBackButton         // 戻るボタンを表示
+            slideDirection="right"
+            showBackButton
           >
             <FriendQRPanel />
           </Popup>
@@ -434,6 +459,30 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     zIndex: 2,
     elevation: 2,
+  },
+  // ★追加：到着ボタンのスタイル
+  arriveButtonContainer: {
+    position: 'absolute',
+    bottom: 110, // フッターに被らない高さ
+    alignSelf: 'center',
+    zIndex: 20,
+    elevation: 20,
+  },
+  arriveButton: {
+    backgroundColor: '#FF6B6B', // わかりやすい赤色
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  arriveButtonText: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   safeArea: {
     flex: 1,

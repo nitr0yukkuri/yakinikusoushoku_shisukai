@@ -26,6 +26,12 @@ import (
 
 var upgrader = websocket.Upgrader{CheckOrigin: checkWebSocketOrigin}
 
+// ★追加：到着したユーザーを管理するためのインメモリマップとロック
+var (
+	arrivedUsersMap = make(map[int64]map[string]bool)
+	arrivedMu       sync.Mutex
+)
+
 type googleAuthRequest struct {
 	IDToken string `json:"idToken"`
 }
@@ -433,6 +439,11 @@ func main() {
 	http.HandleFunc("/spots/", withCORS(handleSpots(pool)))
 	http.HandleFunc("/ws/tickets", withCORS(handleWSTickets(pool, wsTickets)))
 
+	// ★追加：到着記録用エンドポイント
+	http.HandleFunc("/meetups/arrive", withCORS(handleMeetupArrive()))
+	// ★追加：到着状況取得用エンドポイント
+	http.HandleFunc("/meetups/arrive_status", withCORS(handleMeetupArriveStatus()))
+
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ticket, ok := wsTickets.consume(strings.TrimSpace(r.URL.Query().Get("ticket")))
 		if !ok {
@@ -491,6 +502,59 @@ func withCORS(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		next(w, r)
+	}
+}
+
+// ★追加：到着ボタンを押したときに呼ばれる関数
+func handleMeetupArrive() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		var req struct {
+			MeetupID int64  `json:"meetupId"`
+			UserID   string `json:"userId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "bad request")
+			return
+		}
+
+		arrivedMu.Lock()
+		if arrivedUsersMap[req.MeetupID] == nil {
+			arrivedUsersMap[req.MeetupID] = make(map[string]bool)
+		}
+		arrivedUsersMap[req.MeetupID][req.UserID] = true
+		arrivedMu.Unlock()
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
+// ★追加：全員到着したかどうかを確認するための関数
+func handleMeetupArriveStatus() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		meetupIDStr := r.URL.Query().Get("meetupId")
+		meetupID, _ := strconv.ParseInt(meetupIDStr, 10, 64)
+
+		arrivedMu.Lock()
+		users := arrivedUsersMap[meetupID]
+		arrivedList := make([]string, 0)
+		for uid, arrived := range users {
+			if arrived {
+				arrivedList = append(arrivedList, uid)
+			}
+		}
+		arrivedMu.Unlock()
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"arrivedUsers": arrivedList,
+		})
 	}
 }
 
@@ -597,10 +661,6 @@ func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Pa
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (google_sub) DO UPDATE SET
 			email = EXCLUDED.email,
-			name = CASE
-				WHEN auth_users.user_id IS NULL THEN EXCLUDED.name
-				ELSE auth_users.name
-			END,
 			picture_url = EXCLUDED.picture_url,
 			email_verified = EXCLUDED.email_verified,
 			updated_at = now()

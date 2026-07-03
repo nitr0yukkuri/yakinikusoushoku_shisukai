@@ -36,6 +36,9 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const etaGenerationRef = useRef(0);
   const wsTicketRequestVersionRef = useRef(0);
 
+  // ★追加：到着したユーザー一覧を保存するステート
+  const [arrivedUsers, setArrivedUsers] = useState<string[]>([]);
+
   const refreshMeetups = useCallback(async () => {
     if (!token) {
       setMeetups([]);
@@ -97,6 +100,22 @@ export function useMeetupSession(token: string | null, userId?: string) {
     setEtas(body.etas || []);
   }, [activeMeetup, token]);
 
+  // ★追加：バックエンドから最新の到着者一覧を取得する関数
+  const refreshArrivedStatus = useCallback(async () => {
+    if (!token || !activeMeetup) return;
+    try {
+      const response = await fetch(`${apiUrl}/meetups/arrive_status?meetupId=${activeMeetup.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const body = await response.json();
+      if (response.ok) {
+        setArrivedUsers(body.arrivedUsers || []);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch arrived status:', error);
+    }
+  }, [activeMeetup, token]);
+
   const requestWSTicket = useCallback(async () => {
     const requestVersion = ++wsTicketRequestVersionRef.current;
     if (!token || !activeMeetup) {
@@ -131,14 +150,19 @@ export function useMeetupSession(token: string | null, userId?: string) {
   useEffect(() => {
     Promise.resolve()
       .then(refreshETAs)
+      .then(refreshArrivedStatus) // ★追加
       .catch((error) => console.warn('Failed to load ETAs:', error));
+      
     if (!activeMeetup) return;
+    
+    // 定期的なポーリング（タイマー）
     const timer = setInterval(() => {
       setClock(Date.now());
       refreshETAs().catch((error) => console.warn('Failed to refresh ETAs:', error));
+      refreshArrivedStatus().catch((error) => console.warn('Failed to refresh arrive status:', error)); // ★追加
     }, etaRefreshInterval);
     return () => clearInterval(timer);
-  }, [activeMeetup, refreshETAs]);
+  }, [activeMeetup, refreshETAs, refreshArrivedStatus]);
 
   const updateETA = useCallback(async (coordinate: { latitude: number; longitude: number }) => {
     if (!token || !activeMeetup) return;
@@ -213,6 +237,44 @@ export function useMeetupSession(token: string | null, userId?: string) {
     await refreshMeetups();
   }, [refreshMeetups, token]);
 
+  // ★追加：到着したことをサーバーに知らせる関数
+  const sendArrival = useCallback(async () => {
+    if (!token || !activeMeetup || !userId) return;
+    try {
+      await fetch(`${apiUrl}/meetups/arrive`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          meetupId: activeMeetup.id,
+          userId: userId
+        })
+      });
+      await refreshArrivedStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  }, [activeMeetup, token, userId, refreshArrivedStatus]);
+
+  // ★追加：全員到着したかどうかを判定
+  const allArrived = useMemo(() => {
+    if (!activeMeetup || !userId) return false;
+    // 自分も含めた参加者のリストを生成
+    const otherUserIds = etas.map(e => e.user?.userId).filter(Boolean) as string[];
+    const participants = [userId, ...otherUserIds];
+    
+    // ぼっち（一人だけ）の場合は自分が到着したらtrueにする
+    if (participants.length === 1 && arrivedUsers.includes(userId)) return true;
+    
+    // 参加者全員が到着記録（arrivedUsers）に入っているか確認
+    if (participants.length > 0) {
+      return participants.every(id => arrivedUsers.includes(id));
+    }
+    return false;
+  }, [activeMeetup, etas, arrivedUsers, userId]);
+
   const etaMinutes = useMemo(() => {
     const others = etas.filter((eta) => eta.user?.userId !== userId);
     if (others.length === 0) return null;
@@ -236,5 +298,18 @@ export function useMeetupSession(token: string | null, userId?: string) {
     ? issuedWSTicket.ticket
     : undefined;
 
-  return { activeMeetup, etaMinutes, meetups, reconnectWebSocket, refreshMeetups, reportCurrentLocation, respondToInvite, scheduleData, wsTicket };
+  return { 
+    activeMeetup, 
+    etaMinutes: allArrived ? null : etaMinutes, // ★全員到着ならタイマーを強制的にnullにして非表示に
+    allArrived,   // ★追加
+    arrivedUsers, // ★追加
+    sendArrival,  // ★追加
+    meetups, 
+    reconnectWebSocket, 
+    refreshMeetups, 
+    reportCurrentLocation, 
+    respondToInvite, 
+    scheduleData, 
+    wsTicket 
+  };
 }
