@@ -1,6 +1,6 @@
 // components/MeetupSettingForm.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { ActivityIndicator, Alert, Platform, View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import * as Location from 'expo-location';
 import { AppMap } from './AppMap';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -314,56 +314,77 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
 
       {/* 2. フレンド選択 */}
       <Text style={styles.label}>待ち合わせるフレンド</Text>
-      <View style={styles.friendInputBox}>
-        {selectedFriendItems.map((friend) => (
-          <TouchableOpacity
-            key={friend.userId}
-            style={styles.selectedFriendItem}
-            onPress={() => toggleFriend(friend.userId)}
-            disabled={Boolean(existingMeetup)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.selectedFriendText}>✓ {friend.name}</Text>
-            <ProfileAvatar
-              name={friend.name}
-              profileImage={friend.profileImage}
-              size={22}
-              style={styles.selectedFriendAvatar}
-            />
-            <Text style={styles.removeFriendText}>×</Text>
-          </TouchableOpacity>
-        ))}
-        <TextInput
-          style={styles.friendInput}
-          placeholder={selectedFriendItems.length > 0 ? '' : '名前を入力'}
-          placeholderTextColor="rgba(51, 51, 51, 0.45)"
-          value={friendSearch}
-          onChangeText={setFriendSearch}
-          editable={!existingMeetup}
-        />
-      </View>
-      <View style={styles.friendsContainer}>
-        {filteredFriends.map((friend) => {
-          return (
-            <TouchableOpacity
-              key={friend.userId}
-              style={styles.friendChip}
-              onPress={() => toggleFriend(friend.userId)}
-            >
-              <Text style={styles.friendText}>{friend.name}</Text>
-            </TouchableOpacity>
-          );
-        })}
-        {friendSearchQuery && isLoadingFriends && (
-          <View style={styles.inlineLoadingState}>
-            <ActivityIndicator size="small" color="#267a3f" />
-            <Text style={styles.noFriendText}>フレンドを読み込み中...</Text>
+
+      {/* 検索入力欄とドロップダウンをまとめるラッパー */}
+      <View style={styles.searchSectionWrapper}>
+        <View style={styles.friendInputBox}>
+          <TextInput
+            style={styles.friendInput}
+            placeholder="名前を入力"
+            placeholderTextColor="rgba(51, 51, 51, 0.45)"
+            value={friendSearch}
+            onChangeText={setFriendSearch}
+            editable={!existingMeetup}
+          />
+        </View>
+
+        {/* 検索結果をドロップダウンとして表示 (文字が入力されている時だけ) */}
+        {friendSearchQuery.length > 0 && (
+          <View style={styles.searchResultsDropdown}>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {filteredFriends.map((friend) => (
+                <TouchableOpacity
+                  key={friend.userId}
+                  style={styles.searchResultItem}
+                  onPress={() => toggleFriend(friend.userId)}
+                >
+                  <ProfileAvatar
+                    name={friend.name}
+                    profileImage={friend.profileImage}
+                    size={28}
+                  />
+                  <Text style={styles.searchResultText}>{friend.name}</Text>
+                </TouchableOpacity>
+              ))}
+              
+              {isLoadingFriends && (
+                <View style={styles.dropdownMessageContainer}>
+                  <ActivityIndicator size="small" color="#267a3f" />
+                  <Text style={styles.dropdownMessage}>読み込み中...</Text>
+                </View>
+              )}
+              
+              {!isLoadingFriends && filteredFriends.length === 0 && (
+                <Text style={styles.dropdownMessage}>該当するフレンドはいません</Text>
+              )}
+            </ScrollView>
           </View>
         )}
-        {friendSearchQuery && !isLoadingFriends && filteredFriends.length === 0 && (
-          <Text style={styles.noFriendText}>該当するフレンドはいません</Text>
-        )}
       </View>
+
+      {/* 選択済みのフレンド一覧（検索欄の下） */}
+      {selectedFriendItems.length > 0 && (
+        <View style={styles.selectedFriendsWrapper}>
+          {selectedFriendItems.map((friend) => (
+            <TouchableOpacity
+              key={friend.userId}
+              style={styles.selectedFriendItem}
+              onPress={() => toggleFriend(friend.userId)}
+              disabled={Boolean(existingMeetup)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.selectedFriendText}>✓ {friend.name}</Text>
+              <ProfileAvatar
+                name={friend.name}
+                profileImage={friend.profileImage}
+                size={22}
+                style={styles.selectedFriendAvatar}
+              />
+              <Text style={styles.removeFriendText}>×</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {/* 3. 場所 */}
       <Text style={styles.label}>待ち合わせ場所</Text>
@@ -414,14 +435,83 @@ const styles = StyleSheet.create({
   container: { width: '100%', marginTop: 5 },
   label: { fontSize: 14, color: '#333', marginBottom: 6, marginTop: 12 },
   input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, backgroundColor: '#fff', color: '#333' },
-  friendInputBox: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#fff', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, minHeight: 40 },
-  friendInput: { flex: 1, minWidth: 96, paddingVertical: 4, fontSize: 14, color: '#333' },
+  friendInputBox: { 
+    borderWidth: 1, 
+    borderColor: '#ccc', 
+    borderRadius: 8, 
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    backgroundColor: '#fff', 
+    minHeight: 40,
+    justifyContent: 'center' 
+  },
+  friendInput: { 
+    flex: 1, 
+    paddingVertical: 4, 
+    fontSize: 14, 
+    color: '#333' 
+  },
+  selectedFriendsWrapper: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap', 
+    gap: 8, 
+    marginTop: 8
+  },
   selectedFriendItem: { borderWidth: 1, borderColor: 'rgba(51, 51, 51, 0.25)', borderRadius: 16, paddingVertical: 4, paddingLeft: 10, paddingRight: 8, flexDirection: 'row', alignItems: 'center', maxWidth: '100%' },
   selectedFriendText: { color: 'rgba(51, 51, 51, 0.55)', fontSize: 14, fontWeight: '600', flexShrink: 1 },
   selectedFriendAvatar: { marginLeft: 7 },
   removeFriendText: { color: 'rgba(51, 51, 51, 0.5)', fontSize: 15, fontWeight: '700', marginLeft: 8, lineHeight: 16 },
-  friendsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  friendChip: { borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingVertical: 6, paddingHorizontal: 14, marginBottom: 8, marginRight: 8, flexDirection: 'row', alignItems: 'center' },
+  // --- ドロップダウン検索用の追加スタイル ---
+  searchSectionWrapper: {
+    position: 'relative',
+    zIndex: 100, // 地図などの他の要素より前面に出すため
+    elevation: 100,
+  },
+  searchResultsDropdown: {
+    position: 'absolute',
+    top: '100%', // 入力欄の真下に配置
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    marginTop: 4,
+    maxHeight: 200, // 長すぎる場合はスクロールさせる
+    zIndex: 101,
+    elevation: 101,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    overflow: 'hidden',
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  searchResultText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#333',
+  },
+  dropdownMessageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    gap: 8,
+  },
+  dropdownMessage: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+    padding: 16,
+  },
   friendText: { color: '#333' },
   noFriendText: { color: '#888', fontSize: 13, marginTop: 4 },
   inlineLoadingState: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
