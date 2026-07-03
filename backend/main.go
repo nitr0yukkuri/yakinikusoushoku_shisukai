@@ -623,6 +623,17 @@ func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Pa
 
 func ensureAuthProfileSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS auth_users (
+			id BIGSERIAL PRIMARY KEY,
+			google_sub TEXT NOT NULL UNIQUE,
+			email TEXT,
+			name TEXT,
+			picture_url TEXT,
+			email_verified BOOLEAN NOT NULL DEFAULT false,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		);
+		CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users (email);
 		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS user_id TEXT;
 		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS profile_image TEXT;
 		ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS bio TEXT;

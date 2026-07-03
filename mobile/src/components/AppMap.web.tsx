@@ -15,6 +15,7 @@ let googleMapsScriptPromise: Promise<void> | null = null;
 const markerUrlCache = new Map<string, Promise<string>>();
 const markerIconVersions = new WeakMap<object, string>();
 const CURRENT_LOCATION_RING = '#000000';
+const LOCATION_MARKER_RING_WIDTH = 2;
 const DEMO_LOCATION_STEP_METERS = 25;
 const keyboardLocationControlsEnabled = process.env.NODE_ENV !== 'production';
 
@@ -51,7 +52,7 @@ type RemoteLocationMessage = {
 };
 
 const fallbackMarkerUrl = (name: string, size = 48, ringColor?: string) => {
-  const inset = ringColor ? 4 : 2;
+  const inset = ringColor ? 3 : 2;
   const diameter = size - inset * 2;
   const initials = getAvatarInitials(name)
     .replaceAll('&', '&amp;')
@@ -61,7 +62,7 @@ const fallbackMarkerUrl = (name: string, size = 48, ringColor?: string) => {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
       <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="#ffffff"
-        ${ringColor ? `stroke="${ringColor}" stroke-width="3"` : ''} />
+        ${ringColor ? `stroke="${ringColor}" stroke-width="${LOCATION_MARKER_RING_WIDTH}"` : ''} />
       <circle cx="${size / 2}" cy="${size / 2}" r="${diameter / 2}" fill="#208AEF" />
       <text x="${size / 2}" y="${size / 2}" text-anchor="middle" dominant-baseline="central"
         fill="#ffffff" font-family="Arial, sans-serif" font-size="${Math.round(size * 0.38)}"
@@ -75,7 +76,7 @@ const blankMarkerUrl = (size = 48, ringColor?: string) => {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
       <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="#ffffff"
-        ${ringColor ? `stroke="${ringColor}" stroke-width="3"` : ''} />
+        ${ringColor ? `stroke="${ringColor}" stroke-width="${LOCATION_MARKER_RING_WIDTH}"` : ''} />
     </svg>
   `;
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
@@ -105,7 +106,7 @@ const circularMarkerUrl = (name: string, profileImage?: string, size = 48, ringC
         return;
       }
 
-      const inset = ringColor ? 4 : 2;
+      const inset = ringColor ? 3 : 2;
       const diameter = size - inset * 2;
       context.fillStyle = '#ffffff';
       context.beginPath();
@@ -113,7 +114,7 @@ const circularMarkerUrl = (name: string, profileImage?: string, size = 48, ringC
       context.fill();
       if (ringColor) {
         context.strokeStyle = ringColor;
-        context.lineWidth = 3;
+        context.lineWidth = LOCATION_MARKER_RING_WIDTH;
         context.stroke();
       }
       context.save();
@@ -293,7 +294,7 @@ export const AppMap = ({
         map: mapInstanceRef.current,
         title: markerName,
       });
-      setMarkerIcon(browserWindow, otherMarkersRef.current[data.userId], markerName, data.profileImage, 40);
+      setMarkerIcon(browserWindow, otherMarkersRef.current[data.userId], markerName, data.profileImage, 40, CURRENT_LOCATION_RING);
     }
 
     if (markerProfileVersionsRef.current[data.userId] !== profileVersion) {
@@ -307,7 +308,7 @@ export const AppMap = ({
           const marker = otherMarkersRef.current[data.userId];
           if (!marker) return;
           marker.setTitle(profile.name || data.userId);
-          setMarkerIcon(browserWindow, marker, profile.name || data.userId, profile.profileImage, 40);
+          setMarkerIcon(browserWindow, marker, profile.name || data.userId, profile.profileImage, 40, CURRENT_LOCATION_RING);
         })
         .catch((error) => {
           delete markerProfileVersionsRef.current[data.userId];

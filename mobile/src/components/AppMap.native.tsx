@@ -196,6 +196,7 @@ export const AppMap = ({
       disposed = true;
       if (reconnectTimer) clearInterval(reconnectTimer);
       ws.close();
+      setLocations({});
       markerProfileVersionsRef.current = {};
     };
   }, [roomId, userId, wsTicket]);
@@ -434,6 +435,8 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+    borderWidth: 2,
+    borderColor: '#000000',
     backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
@@ -445,7 +448,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   currentMarkerBorder: {
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: '#000000',
   },
   avatar: {
