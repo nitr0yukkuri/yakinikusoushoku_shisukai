@@ -26,6 +26,12 @@ import (
 
 var upgrader = websocket.Upgrader{CheckOrigin: checkWebSocketOrigin}
 
+// ★追加：到着したユーザーを管理するためのインメモリマップとロック
+var (
+	arrivedUsersMap = make(map[int64]map[string]bool)
+	arrivedMu       sync.Mutex
+)
+
 type googleAuthRequest struct {
 	IDToken string `json:"idToken"`
 }
@@ -433,6 +439,11 @@ func main() {
 	http.HandleFunc("/spots/", withCORS(handleSpots(pool)))
 	http.HandleFunc("/ws/tickets", withCORS(handleWSTickets(pool, wsTickets)))
 
+	// ★追加：到着記録用エンドポイント
+	http.HandleFunc("/meetups/arrive", withCORS(handleMeetupArrive()))
+	// ★追加：到着状況取得用エンドポイント
+	http.HandleFunc("/meetups/arrive_status", withCORS(handleMeetupArriveStatus()))
+
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ticket, ok := wsTickets.consume(strings.TrimSpace(r.URL.Query().Get("ticket")))
 		if !ok {
@@ -491,6 +502,59 @@ func withCORS(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		next(w, r)
+	}
+}
+
+// ★追加：到着ボタンを押したときに呼ばれる関数
+func handleMeetupArrive() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		var req struct {
+			MeetupID int64  `json:"meetupId"`
+			UserID   string `json:"userId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "bad request")
+			return
+		}
+
+		arrivedMu.Lock()
+		if arrivedUsersMap[req.MeetupID] == nil {
+			arrivedUsersMap[req.MeetupID] = make(map[string]bool)
+		}
+		arrivedUsersMap[req.MeetupID][req.UserID] = true
+		arrivedMu.Unlock()
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
+// ★追加：全員到着したかどうかを確認するための関数
+func handleMeetupArriveStatus() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		meetupIDStr := r.URL.Query().Get("meetupId")
+		meetupID, _ := strconv.ParseInt(meetupIDStr, 10, 64)
+
+		arrivedMu.Lock()
+		users := arrivedUsersMap[meetupID]
+		arrivedList := make([]string, 0)
+		for uid, arrived := range users {
+			if arrived {
+				arrivedList = append(arrivedList, uid)
+			}
+		}
+		arrivedMu.Unlock()
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"arrivedUsers": arrivedList,
+		})
 	}
 }
 
@@ -585,10 +649,6 @@ func validateGoogleIDToken(ctx context.Context, token string, clientIDs []string
 	return nil, fmt.Errorf("no configured Google client ID matched token audience: %s", strings.Join(errs, "; "))
 }
 
-// ==============================================================================
-// 🌟 修正ポイント: ここから下の関数を修正しました
-// ログイン時にカスタムプロフィール（名前など）をGoogle情報で上書きしないようにしています
-// ==============================================================================
 func upsertAuthUser(ctx context.Context, pool *pgxpool.Pool, payload *idtoken.Payload) (authUser, error) {
 	email := claimString(payload.Claims, "email")
 	name := claimString(payload.Claims, "name")
