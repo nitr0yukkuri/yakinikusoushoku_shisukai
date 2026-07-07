@@ -21,9 +21,10 @@ interface FriendPanelProps {
   onOpenSearch: () => void;
   onOpenQR: () => void;
   onOpenRequests: () => void; // ★追加
+  pauseAutoRefresh?: boolean;
 }
 
-export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR, onOpenRequests }) => {
+export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR, onOpenRequests, pauseAutoRefresh = false }) => {
   const { token } = useProfile();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
@@ -44,9 +45,12 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
     if (!requestsResponse.ok) throw new Error(requestsBody.error || '申請を取得できませんでした');
     setFriends(friendsBody.friends || []);
     setIncoming(requestsBody.incoming || []);
+    setMessage('');
   }, [token]);
 
   useEffect(() => {
+    if (pauseAutoRefresh) return;
+
     let cancelled = false;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -54,7 +58,7 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
       try {
         await loadFriends();
       } catch (error) {
-        if (!cancelled) setMessage(toUserErrorMessage(error, 'フレンドを取得できませんでした'));
+        console.warn('Friend refresh failed:', error);
       } finally {
         if (!cancelled) setLoadedFriendsForToken(token ?? null);
         if (!cancelled) refreshTimer = setTimeout(refreshFriends, 3000);
@@ -66,7 +70,7 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [loadFriends, token]);
+  }, [loadFriends, pauseAutoRefresh, token]);
 
   return (
     <View style={styles.container}>
@@ -280,7 +284,7 @@ export const FriendRequestsPanel: React.FC = () => {
   const [message, setMessage] = useState('');
   const isLoadingRequests = Boolean(token) && loadedRequestsForToken !== token;
 
-  const loadRequests = useCallback(async () => {
+  const loadRequests = useCallback(async (showError = true) => {
     if (!token) return;
     try {
       const response = await fetch(`${apiUrl}/friends/requests`, {
@@ -289,8 +293,13 @@ export const FriendRequestsPanel: React.FC = () => {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || '申請を取得できませんでした');
       setIncoming(body.incoming || []);
+      setMessage('');
     } catch (error) {
-      setMessage(toUserErrorMessage(error, '申請を取得できませんでした'));
+      if (showError) {
+        setMessage(toUserErrorMessage(error, '申請を取得できませんでした'));
+      } else {
+        console.warn('Friend requests refresh failed:', error);
+      }
     } finally {
       setLoadedRequestsForToken(token ?? null);
     }
@@ -302,7 +311,7 @@ export const FriendRequestsPanel: React.FC = () => {
 
     const refreshRequests = async () => {
       try {
-        await loadRequests();
+        await loadRequests(false);
       } finally {
         if (!cancelled) refreshTimer = setTimeout(refreshRequests, 3000);
       }
