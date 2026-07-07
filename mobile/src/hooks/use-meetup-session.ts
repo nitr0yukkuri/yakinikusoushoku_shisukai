@@ -17,6 +17,8 @@ export type MeetupSummary = {
 type ETA = {
   arrivalAt: string;
   durationSeconds: number;
+  routePolyline?: string;
+  travelMode?: string;
   user?: { userId: string };
 };
 
@@ -177,7 +179,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
         body: JSON.stringify({
           latitude: coordinate.latitude,
           longitude: coordinate.longitude,
-          travelMode: 'DRIVE',
+          travelMode: 'TRANSIT',
           bufferMinutes: 5,
         }),
       });
@@ -276,11 +278,21 @@ export function useMeetupSession(token: string | null, userId?: string) {
   }, [activeMeetup, etas, arrivedUsers, userId]);
 
   const etaMinutes = useMemo(() => {
-    const others = etas.filter((eta) => eta.user?.userId !== userId);
+    const others = etas.filter((eta) => eta.user?.userId !== userId && eta.travelMode === 'TRANSIT');
     if (others.length === 0) return null;
     const latestArrival = Math.max(...others.map((eta) => new Date(eta.arrivalAt).getTime()));
     return Math.max(0, Math.ceil((latestArrival - clock) / 60000));
   }, [clock, etas, userId]);
+
+  const routePolyline = useMemo(() => {
+    const transitETAs = etas.filter((eta) => eta.travelMode === 'TRANSIT');
+    const ownRoute = transitETAs.find((eta) => eta.user?.userId === userId)?.routePolyline;
+    if (ownRoute) return ownRoute;
+    return transitETAs
+      .filter((eta) => eta.user?.userId !== userId)
+      .sort((left, right) => new Date(right.arrivalAt).getTime() - new Date(left.arrivalAt).getTime())[0]
+      ?.routePolyline;
+  }, [etas, userId]);
 
   const scheduleData = useMemo(() => meetups.reduce<Record<string, { id: string; title: string }[]>>(
     (result, item) => {
@@ -300,6 +312,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
 
   return { 
     activeMeetup, 
+    routePolyline: allArrived ? undefined : routePolyline,
     etaMinutes: allArrived ? null : etaMinutes, // ★全員到着ならタイマーを強制的にnullにして非表示に
     allArrived,   // ★追加
     arrivedUsers, // ★追加

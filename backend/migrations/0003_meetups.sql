@@ -43,7 +43,10 @@ CREATE TABLE IF NOT EXISTS meetup_arrival_estimates (
     duration_seconds BIGINT NOT NULL CHECK (duration_seconds >= 0),
     distance_meters BIGINT NOT NULL CHECK (distance_meters >= 0),
     buffer_minutes INTEGER NOT NULL DEFAULT 5 CHECK (buffer_minutes BETWEEN 0 AND 30),
+    route_polyline TEXT,
     arrival_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (meetup_id, user_id)
 );
+
+ALTER TABLE meetup_arrival_estimates ADD COLUMN IF NOT EXISTS route_polyline TEXT;
