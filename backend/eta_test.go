@@ -77,3 +77,13 @@ func TestRequestGoogleRouteTransit(t *testing.T) {
 		t.Fatalf("route = (%d, %d, %q), want (900, 5200, %q)", duration, distance, routePolyline, "transit123")
 	}
 }
+
+func TestEstimateFallbackRoute(t *testing.T) {
+	duration, distance := estimateFallbackRoute(35.681236, 139.767125, 35.689634, 139.692101, "DRIVE")
+	if distance < 6000 || distance > 7000 {
+		t.Fatalf("distance = %d, want roughly 6000-7000", distance)
+	}
+	if duration <= 0 {
+		t.Fatalf("duration = %d, want positive", duration)
+	}
+}

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -17,6 +19,8 @@ import (
 )
 
 var googleRoutesURL = "https://routes.googleapis.com/directions/v2:computeRoutes"
+
+const earthRadiusMeters = 6371000
 
 type calculateETARequest struct {
 	Latitude      float64 `json:"latitude"`
@@ -115,8 +119,8 @@ func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 
 	durationSeconds, distanceMeters, routePolyline, err := requestGoogleRoute(ctx, req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
 	if err != nil {
-		writeJSONError(w, http.StatusBadGateway, "failed to calculate route")
-		return
+		log.Printf("route calculation failed; using fallback ETA: meetup=%d user=%d mode=%s err=%v", meetupID, userNo, travelMode, err)
+		durationSeconds, distanceMeters = estimateFallbackRoute(req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
 	}
 	now := time.Now()
 	arrivalAt := now.Add(time.Duration(durationSeconds)*time.Second + time.Duration(bufferMinutes)*time.Minute)
@@ -239,4 +243,39 @@ func requestGoogleRoute(ctx context.Context, originLat, originLng, destinationLa
 		return 0, 0, "", fmt.Errorf("invalid route duration: %w", err)
 	}
 	return int64(duration.Seconds()), result.Routes[0].DistanceMeters, result.Routes[0].Polyline.EncodedPolyline, nil
+}
+
+func estimateFallbackRoute(originLat, originLng, destinationLat, destinationLng float64, travelMode string) (int64, int64) {
+	distanceMeters := haversineDistanceMeters(originLat, originLng, destinationLat, destinationLng)
+	speedMetersPerSecond := fallbackSpeedMetersPerSecond(travelMode)
+	durationSeconds := int64(math.Ceil(float64(distanceMeters) / speedMetersPerSecond))
+	if durationSeconds < 60 && distanceMeters > 0 {
+		durationSeconds = 60
+	}
+	return durationSeconds, distanceMeters
+}
+
+func fallbackSpeedMetersPerSecond(travelMode string) float64 {
+	switch travelMode {
+	case "WALK":
+		return 1.4
+	case "BICYCLE":
+		return 4.2
+	case "TRANSIT":
+		return 6.9
+	default:
+		return 8.3
+	}
+}
+
+func haversineDistanceMeters(originLat, originLng, destinationLat, destinationLng float64) int64 {
+	originLatRad := originLat * math.Pi / 180
+	destinationLatRad := destinationLat * math.Pi / 180
+	latDelta := (destinationLat - originLat) * math.Pi / 180
+	lngDelta := (destinationLng - originLng) * math.Pi / 180
+
+	a := math.Sin(latDelta/2)*math.Sin(latDelta/2) +
+		math.Cos(originLatRad)*math.Cos(destinationLatRad)*
+			math.Sin(lngDelta/2)*math.Sin(lngDelta/2)
+	return int64(math.Round(earthRadiusMeters * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))))
 }

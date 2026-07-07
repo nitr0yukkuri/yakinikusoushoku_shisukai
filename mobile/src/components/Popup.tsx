@@ -6,6 +6,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // 🌟 追加：現在開いているポップアップの onClose を保持する変数
 let activePopupClose: (() => void) | null = null;
+let activeRightPopup: { id: symbol; onClose: () => void; closeWithParent: () => void } | null = null;
+let closingWithParentPopupID: symbol | null = null;
 
 interface PopupProps {
   visible: boolean;
@@ -32,40 +34,81 @@ export const Popup: React.FC<PopupProps> = ({
 }) => {
   const [isRendered, setIsRendered] = useState(false);
   
+  const [popupID] = useState(() => Symbol('popup'));
   const translateAnim = useRef(new Animated.Value(slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const transformDirection = !visible && closingWithParentPopupID === popupID ? 'bottom' : slideDirection;
 
   useEffect(() => {
     if (visible) {
-      // 🌟 追加：もし別のポップアップが開いていたら、そちらの onClose を発火させて閉じる
-      if (activePopupClose && activePopupClose !== onClose) {
-        activePopupClose();
-      }
-      // 🌟 追加：自分自身を「現在開いているポップアップ」として登録
-      activePopupClose = onClose;
+      let shouldWaitForStackClose = false;
 
-      setIsRendered(true);
-      Animated.parallel([
-        Animated.timing(translateAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        })
-      ]).start();
+      // 🌟 追加：もし別のポップアップが開いていたら、そちらの onClose を発火させて閉じる
+      if (slideDirection === 'right') {
+        if (activeRightPopup && activeRightPopup.id !== popupID) {
+          activeRightPopup.onClose();
+        }
+        activeRightPopup = {
+          id: popupID,
+          onClose,
+          closeWithParent: () => {
+            closingWithParentPopupID = popupID;
+            onClose();
+          },
+        };
+      } else {
+        if (activeRightPopup && activeRightPopup.onClose !== onClose) {
+          activeRightPopup.closeWithParent();
+          activeRightPopup = null;
+          shouldWaitForStackClose = true;
+        }
+        if (activePopupClose && activePopupClose !== onClose) {
+          activePopupClose();
+        }
+        // 🌟 追加：自分自身を「現在開いているポップアップ」として登録
+        activePopupClose = onClose;
+      }
+
+      const openPopup = () => {
+        translateAnim.setValue(slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT);
+        opacity.setValue(0);
+        setIsRendered(true);
+        Animated.parallel([
+          Animated.timing(translateAnim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          })
+        ]).start();
+      };
+
+      if (shouldWaitForStackClose) {
+        const timer = setTimeout(openPopup, 120);
+        return () => clearTimeout(timer);
+      }
+
+      openPopup();
     } else {
+      const exitDirection = closingWithParentPopupID === popupID ? 'bottom' : slideDirection;
       // 🌟 追加：自分が閉じられる時は、登録を解除する
       if (activePopupClose === onClose) {
         activePopupClose = null;
       }
+      if (activeRightPopup?.id === popupID) {
+        activeRightPopup = null;
+      }
+      if (closingWithParentPopupID === popupID) {
+        closingWithParentPopupID = null;
+      }
 
       Animated.parallel([
         Animated.timing(translateAnim, {
-          toValue: slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT,
+          toValue: exitDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT,
           duration: 250,
           useNativeDriver: true,
         }),
@@ -78,7 +121,7 @@ export const Popup: React.FC<PopupProps> = ({
         setIsRendered(false);
       });
     }
-  }, [visible, onClose]); // onClose を依存配列に追加
+  }, [visible, popupID, slideDirection]);
 
   if (!visible && !isRendered) return null;
 
@@ -90,7 +133,7 @@ export const Popup: React.FC<PopupProps> = ({
 
       <Animated.View style={[styles.popupContainer, { 
         height: sheetHeight, 
-        transform: [ slideDirection === 'right' ? { translateX: translateAnim } : { translateY: translateAnim } ] 
+        transform: [ transformDirection === 'right' ? { translateX: translateAnim } : { translateY: translateAnim } ]
       }]}>
         
         <View style={styles.dragHandleWrapper}>

@@ -421,7 +421,7 @@ export const AppMap = ({
               key={selfMarkerImageKey}
               name={userName}
               profileImage={profileImage}
-              size={38}
+              size={34}
               style={styles.avatar}
             />
           </View>
@@ -444,7 +444,7 @@ export const AppMap = ({
                 key={markerImageKey}
                 name={loc.userName}
                 profileImage={loc.profileImage}
-                size={38}
+                size={34}
                 style={styles.avatar}
               />
             </View>
@@ -501,8 +501,8 @@ const styles = StyleSheet.create({
     borderColor: '#000000',
   },
   avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
   },
 });

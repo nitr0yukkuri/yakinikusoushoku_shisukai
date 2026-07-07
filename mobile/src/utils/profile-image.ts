@@ -1,8 +1,12 @@
 import type { ImagePickerAsset } from 'expo-image-picker';
 
+export const maxProfileImageBytes = 2 * 1024 * 1024;
+export const maxProfileImageDataUrlLength = Math.ceil(maxProfileImageBytes * 4 / 3) + 64;
+
 export function getPersistableProfileImage(asset: ImagePickerAsset): string | null {
   if (asset.base64) {
-    return `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
+    const image = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
+    return image.length <= maxProfileImageDataUrlLength ? image : null;
   }
   return null;
 }

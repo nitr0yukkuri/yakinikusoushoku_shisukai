@@ -138,11 +138,12 @@ export default function HomeScreen() {
             style={styles.arriveButton}
             onPress={() => {
               sendArrival();
-              Alert.alert("到着しました！", "全員が到着するとタイマーが消えます。");
+              Alert.alert("共有しました", "全員がそろうとタイマーが消えます。");
             }}
             activeOpacity={0.8}
           >
-            <Text style={styles.arriveButtonText}>到着！</Text>
+            <Text style={styles.arriveButtonLabel}>着いたら</Text>
+            <Text style={styles.arriveButtonText}>知らせる</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -215,6 +216,7 @@ export default function HomeScreen() {
               onOpenSearch={() => setFriendSearchVisible(true)}
               onOpenQR={() => setFriendQRVisible(true)}
               onOpenRequests={() => setFriendRequestsVisible(true)}
+              pauseAutoRefresh={isFriendSearchVisible || isFriendQRVisible || isFriendRequestsVisible}
             />
           </Popup>
 
@@ -467,23 +469,32 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 110, // フッターに被らない高さ
     alignSelf: 'center',
-    zIndex: 20,
-    elevation: 20,
+    zIndex: 2,
+    elevation: 2,
   },
   arriveButton: {
-    backgroundColor: '#FF6B6B', // わかりやすい赤色
-    paddingVertical: 14,
-    paddingHorizontal: 40,
-    borderRadius: 30,
+    backgroundColor: '#ffffff',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#267a3f',
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  arriveButtonLabel: {
+    color: '#526057',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
   },
   arriveButtonText: {
-    color: '#FFF',
-    fontSize: 20,
+    color: '#267a3f',
+    fontSize: 15,
     fontWeight: 'bold',
   },
   safeArea: {

@@ -60,6 +60,8 @@ type profileRequest struct {
 	Bio          string `json:"bio"`
 }
 
+const maxProfileImageDataURLLength = 2796267
+
 type publicProfile struct {
 	UserID       string `json:"userId"`
 	Name         string `json:"name"`
@@ -751,6 +753,10 @@ func handleAuthProfile(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		if !isUserID(req.UserID) {
 			writeJSONError(w, http.StatusBadRequest, "userId must be alphanumeric")
+			return
+		}
+		if len(req.ProfileImage) > maxProfileImageDataURLLength {
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "profile image is too large")
 			return
 		}
 
