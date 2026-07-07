@@ -38,11 +38,13 @@ export const Popup: React.FC<PopupProps> = ({
   useEffect(() => {
     if (visible) {
       // 🌟 追加：もし別のポップアップが開いていたら、そちらの onClose を発火させて閉じる
-      if (activePopupClose && activePopupClose !== onClose) {
+      if (slideDirection !== 'right' && activePopupClose && activePopupClose !== onClose) {
         activePopupClose();
       }
       // 🌟 追加：自分自身を「現在開いているポップアップ」として登録
-      activePopupClose = onClose;
+      if (slideDirection !== 'right') {
+        activePopupClose = onClose;
+      }
 
       setIsRendered(true);
       Animated.parallel([

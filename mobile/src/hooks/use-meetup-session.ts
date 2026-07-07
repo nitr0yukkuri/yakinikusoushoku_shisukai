@@ -34,6 +34,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const demoETATimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const etaUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
   const etaGenerationRef = useRef(0);
+  const etaAccessDeniedMeetupIdRef = useRef<number | null>(null);
   const wsTicketRequestVersionRef = useRef(0);
 
   // ★追加：到着したユーザー一覧を保存するステート
@@ -74,6 +75,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   useEffect(() => {
     lastETAUpdateRef.current = 0;
     etaGenerationRef.current += 1;
+    etaAccessDeniedMeetupIdRef.current = null;
     if (demoETATimerRef.current) {
       clearTimeout(demoETATimerRef.current);
       demoETATimerRef.current = null;
@@ -92,11 +94,18 @@ export function useMeetupSession(token: string | null, userId?: string) {
       setEtas([]);
       return;
     }
+    if (etaAccessDeniedMeetupIdRef.current === activeMeetup.id) return;
     const response = await fetch(`${apiUrl}/meetups/${activeMeetup.id}/eta`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const body = await response.json();
+    if (response.status === 403) {
+      etaAccessDeniedMeetupIdRef.current = activeMeetup.id;
+      setEtas([]);
+      return;
+    }
     if (!response.ok) throw new Error(body.error || '到着時間を取得できませんでした');
+    etaAccessDeniedMeetupIdRef.current = null;
     setEtas(body.etas || []);
   }, [activeMeetup, token]);
 
@@ -166,6 +175,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
 
   const updateETA = useCallback(async (coordinate: { latitude: number; longitude: number }) => {
     if (!token || !activeMeetup) return;
+    if (etaAccessDeniedMeetupIdRef.current === activeMeetup.id) return;
     lastETAUpdateRef.current = Date.now();
     try {
       const response = await fetch(`${apiUrl}/meetups/${activeMeetup.id}/eta`, {

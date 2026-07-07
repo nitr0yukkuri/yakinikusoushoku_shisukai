@@ -590,7 +590,9 @@ export const AppMap = ({
         );
         watchId = navigator.geolocation.watchPosition(
           applyCurrentPosition,
-          (error) => console.warn('Watch Position Error:', error),
+          (error) => {
+            if (error.code !== error.TIMEOUT) console.warn('Watch Position Error:', error);
+          },
           { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
         );
       } catch (error) {
