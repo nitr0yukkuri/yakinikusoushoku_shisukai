@@ -21,6 +21,8 @@ import (
 var googleRoutesURL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 
 const earthRadiusMeters = 6371000
+const walkRouteThresholdMeters = 10000
+const transitExtraBufferMinutes = 10
 
 type calculateETARequest struct {
 	Latitude      float64 `json:"latitude"`
@@ -73,6 +75,13 @@ type routesAPIResponse struct {
 		Polyline       struct {
 			EncodedPolyline string `json:"encodedPolyline"`
 		} `json:"polyline"`
+		Legs []struct {
+			Steps []struct {
+				Polyline struct {
+					EncodedPolyline string `json:"encodedPolyline"`
+				} `json:"polyline"`
+			} `json:"steps"`
+		} `json:"legs"`
 	} `json:"routes"`
 }
 
@@ -86,7 +95,6 @@ func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 		writeJSONError(w, http.StatusBadRequest, "valid origin coordinates are required")
 		return
 	}
-	travelMode := "TRANSIT"
 	bufferMinutes := 5
 	if req.BufferMinutes != nil {
 		bufferMinutes = *req.BufferMinutes
@@ -117,13 +125,18 @@ func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 		return
 	}
 
+	travelMode := selectTravelModeByDistance(req.Latitude, req.Longitude, destinationLat, destinationLng)
 	durationSeconds, distanceMeters, routePolyline, err := requestGoogleRoute(ctx, req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
 	if err != nil {
 		log.Printf("route calculation failed; using fallback ETA: meetup=%d user=%d mode=%s err=%v", meetupID, userNo, travelMode, err)
 		durationSeconds, distanceMeters = estimateFallbackRoute(req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
 	}
+	if routePolyline == "" {
+		routePolyline = requestRouteDisplayPolyline(ctx, req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
+	}
+	effectiveBufferMinutes := bufferMinutesForTravelMode(travelMode, bufferMinutes)
 	now := time.Now()
-	arrivalAt := now.Add(time.Duration(durationSeconds)*time.Second + time.Duration(bufferMinutes)*time.Minute)
+	arrivalAt := now.Add(time.Duration(durationSeconds)*time.Second + time.Duration(effectiveBufferMinutes)*time.Minute)
 	var saved etaResponse
 	err = pool.QueryRow(ctx, `
 		INSERT INTO meetup_arrival_estimates (
@@ -140,7 +153,7 @@ func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 			updated_at = now()
 		RETURNING meetup_id, travel_mode, duration_seconds, distance_meters,
 			buffer_minutes, COALESCE(route_polyline, ''), arrival_at, updated_at
-	`, meetupID, userNo, travelMode, durationSeconds, distanceMeters, bufferMinutes, routePolyline, arrivalAt).Scan(
+	`, meetupID, userNo, travelMode, durationSeconds, distanceMeters, effectiveBufferMinutes, routePolyline, arrivalAt).Scan(
 		&saved.MeetupID, &saved.TravelMode, &saved.DurationSeconds, &saved.DistanceMeters,
 		&saved.BufferMinutes, &saved.RoutePolyline, &saved.ArrivalAt, &saved.UpdatedAt,
 	)
@@ -221,7 +234,7 @@ func requestGoogleRoute(ctx context.Context, originLat, originLng, destinationLa
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Goog-Api-Key", apiKey)
-	req.Header.Set("X-Goog-FieldMask", "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline")
+	req.Header.Set("X-Goog-FieldMask", "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.polyline.encodedPolyline")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 0, 0, "", err
@@ -242,7 +255,138 @@ func requestGoogleRoute(ctx context.Context, originLat, originLng, destinationLa
 	if err != nil {
 		return 0, 0, "", fmt.Errorf("invalid route duration: %w", err)
 	}
-	return int64(duration.Seconds()), result.Routes[0].DistanceMeters, result.Routes[0].Polyline.EncodedPolyline, nil
+	routePolyline := result.Routes[0].Polyline.EncodedPolyline
+	if routePolyline == "" {
+		routePolyline = buildRoutePolylineFromSteps(result.Routes[0].Legs)
+	}
+	return int64(duration.Seconds()), result.Routes[0].DistanceMeters, routePolyline, nil
+}
+
+func selectTravelModeByDistance(originLat, originLng, destinationLat, destinationLng float64) string {
+	if haversineDistanceMeters(originLat, originLng, destinationLat, destinationLng) <= walkRouteThresholdMeters {
+		return "WALK"
+	}
+	return "TRANSIT"
+}
+
+func bufferMinutesForTravelMode(travelMode string, baseBufferMinutes int) int {
+	if travelMode == "TRANSIT" {
+		return baseBufferMinutes + transitExtraBufferMinutes
+	}
+	return baseBufferMinutes
+}
+
+func requestRouteDisplayPolyline(ctx context.Context, originLat, originLng, destinationLat, destinationLng float64, travelMode string) string {
+	fallbackModes := []string{"DRIVE"}
+	if travelMode != "TRANSIT" {
+		fallbackModes = []string{"WALK", "DRIVE"}
+	}
+	for _, fallbackMode := range fallbackModes {
+		_, _, routePolyline, err := requestGoogleRoute(ctx, originLat, originLng, destinationLat, destinationLng, fallbackMode)
+		if err == nil && routePolyline != "" {
+			return routePolyline
+		}
+		log.Printf("display route polyline fallback failed: mode=%s err=%v", fallbackMode, err)
+	}
+	return ""
+}
+
+func buildRoutePolylineFromSteps(legs []struct {
+	Steps []struct {
+		Polyline struct {
+			EncodedPolyline string `json:"encodedPolyline"`
+		} `json:"polyline"`
+	} `json:"steps"`
+}) string {
+	points := make([]routeLatLng, 0)
+	for _, leg := range legs {
+		for _, step := range leg.Steps {
+			stepPoints, err := decodeEncodedPolyline(step.Polyline.EncodedPolyline)
+			if err != nil || len(stepPoints) == 0 {
+				continue
+			}
+			if len(points) > 0 && sameRoutePoint(points[len(points)-1], stepPoints[0]) {
+				stepPoints = stepPoints[1:]
+			}
+			points = append(points, stepPoints...)
+		}
+	}
+	if len(points) < 2 {
+		return ""
+	}
+	return encodeRoutePolyline(points)
+}
+
+func decodeEncodedPolyline(encoded string) ([]routeLatLng, error) {
+	points := make([]routeLatLng, 0)
+	index := 0
+	lat := int64(0)
+	lng := int64(0)
+	for index < len(encoded) {
+		latDelta, nextIndex, err := decodePolylineValue(encoded, index)
+		if err != nil {
+			return nil, err
+		}
+		index = nextIndex
+		lngDelta, nextIndex, err := decodePolylineValue(encoded, index)
+		if err != nil {
+			return nil, err
+		}
+		index = nextIndex
+		lat += latDelta
+		lng += lngDelta
+		points = append(points, routeLatLng{Latitude: float64(lat) / 1e5, Longitude: float64(lng) / 1e5})
+	}
+	return points, nil
+}
+
+func decodePolylineValue(encoded string, index int) (int64, int, error) {
+	var result int64
+	var shift uint
+	for index < len(encoded) {
+		value := int64(encoded[index] - 63)
+		index++
+		result |= (value & 0x1f) << shift
+		shift += 5
+		if value < 0x20 {
+			if result&1 != 0 {
+				return ^(result >> 1), index, nil
+			}
+			return result >> 1, index, nil
+		}
+	}
+	return 0, index, fmt.Errorf("invalid encoded polyline")
+}
+
+func encodeRoutePolyline(points []routeLatLng) string {
+	var builder strings.Builder
+	prevLat := int64(0)
+	prevLng := int64(0)
+	for _, point := range points {
+		lat := int64(math.Round(point.Latitude * 1e5))
+		lng := int64(math.Round(point.Longitude * 1e5))
+		encodePolylineValue(&builder, lat-prevLat)
+		encodePolylineValue(&builder, lng-prevLng)
+		prevLat = lat
+		prevLng = lng
+	}
+	return builder.String()
+}
+
+func encodePolylineValue(builder *strings.Builder, value int64) {
+	value <<= 1
+	if value < 0 {
+		value = ^value
+	}
+	for value >= 0x20 {
+		builder.WriteByte(byte((0x20 | (value & 0x1f)) + 63))
+		value >>= 5
+	}
+	builder.WriteByte(byte(value + 63))
+}
+
+func sameRoutePoint(left, right routeLatLng) bool {
+	return math.Abs(left.Latitude-right.Latitude) < 0.00001 && math.Abs(left.Longitude-right.Longitude) < 0.00001
 }
 
 func estimateFallbackRoute(originLat, originLng, destinationLat, destinationLng float64, travelMode string) (int64, int64) {
