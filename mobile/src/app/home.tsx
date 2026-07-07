@@ -142,8 +142,7 @@ export default function HomeScreen() {
             }}
             activeOpacity={0.8}
           >
-            <Text style={styles.arriveButtonLabel}>着いたら</Text>
-            <Text style={styles.arriveButtonText}>知らせる</Text>
+            <Text style={styles.arriveButtonText}>到着</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -469,8 +468,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 110, // フッターに被らない高さ
     alignSelf: 'center',
-    zIndex: 2,
-    elevation: 2,
+    zIndex: 0,
+    elevation: 0,
   },
   arriveButton: {
     backgroundColor: '#ffffff',
@@ -494,7 +493,7 @@ const styles = StyleSheet.create({
   },
   arriveButtonText: {
     color: '#267a3f',
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: 'bold',
   },
   safeArea: {
