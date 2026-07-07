@@ -70,6 +70,7 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const mapSelectionRef = useRef(Boolean(existingMeetup));
+  const [isFriendInputFocused, setIsFriendInputFocused] = useState(false);
 
   const friendSearchQuery = friendSearch.trim().toLowerCase();
   const filteredFriends = friendSearchQuery
@@ -317,7 +318,7 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
 
       {/* 検索入力欄とドロップダウンをまとめるラッパー */}
       <View style={styles.searchSectionWrapper}>
-        <View style={styles.friendInputBox}>
+        <View style={[styles.friendInputBox,isFriendInputFocused && styles.friendInputBoxFocused]}>
           <TextInput
             style={styles.friendInput}
             placeholder="名前を入力"
@@ -325,6 +326,8 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
             value={friendSearch}
             onChangeText={setFriendSearch}
             editable={!existingMeetup}
+            onFocus={() => setIsFriendInputFocused(true)}
+            onBlur={() => setIsFriendInputFocused(false)}
           />
         </View>
 
@@ -449,7 +452,15 @@ const styles = StyleSheet.create({
     flex: 1, 
     paddingVertical: 4, 
     fontSize: 14, 
-    color: '#333' 
+    color: '#333',
+    // 内側のブラウザ標準枠は消す
+    ...Platform.select({
+      web: { outlineStyle: 'none' } as any,
+    }),
+  },
+  friendInputBoxFocused: {
+    borderColor: '#333',
+    borderWidth: 2,
   },
   selectedFriendsWrapper: { 
     flexDirection: 'row', 

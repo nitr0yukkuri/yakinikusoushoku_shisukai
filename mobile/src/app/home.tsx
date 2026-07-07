@@ -42,6 +42,7 @@ export default function HomeScreen() {
   const {
     activeMeetup,
     etaMinutes,
+    routePolyline,
     allArrived,
     arrivedUsers,
     sendArrival,
@@ -120,6 +121,7 @@ export default function HomeScreen() {
         profileImage={avatarUrl || undefined}
         followCurrentLocation
         selectedLocation={activeMeetupLocation}
+        routePolyline={routePolyline}
         onCurrentLocationChange={reportCurrentLocation}
         onWebSocketDisconnect={reconnectWebSocket}
       />

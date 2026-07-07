@@ -32,6 +32,7 @@ type AppMapProps = {
     longitude: number;
   } | null;
   locationQuery?: string;
+  routePolyline?: string;
   onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
   onCurrentLocationChange?: (
     coordinate: { latitude: number; longitude: number },
@@ -49,6 +50,40 @@ type RemoteLocationMessage = {
   lat: number;
   lng: number;
   timestamp: number;
+};
+
+const decodePolyline = (encoded: string) => {
+  const points: { lat: number; lng: number }[] = [];
+  let index = 0;
+  let latitude = 0;
+  let longitude = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte = 0;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+
+    latitude += (result & 1) ? ~(result >> 1) : result >> 1;
+    shift = 0;
+    result = 0;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+
+    longitude += (result & 1) ? ~(result >> 1) : result >> 1;
+    points.push({ lat: latitude / 1e5, lng: longitude / 1e5 });
+  }
+
+  return points;
 };
 
 const fallbackMarkerUrl = (name: string, size = 48, ringColor?: string) => {
@@ -203,6 +238,7 @@ export const AppMap = ({
   followCurrentLocation = false,
   selectedLocation,
   locationQuery,
+  routePolyline,
   onLocationSelect,
   onCurrentLocationChange,
   onWebSocketDisconnect,
@@ -223,6 +259,7 @@ export const AppMap = ({
   const pendingLocationsRef = useRef<Record<string, RemoteLocationMessage>>({});
   const myMarkerRef = useRef<any>(null);
   const selectedMarkerRef = useRef<any>(null);
+  const routePolylineOverlayRef = useRef<any>(null);
   const selectedLocationRef = useRef(selectedLocation);
   const onLocationSelectRef = useRef(onLocationSelect);
   const onCurrentLocationChangeRef = useRef(onCurrentLocationChange);
@@ -411,6 +448,31 @@ export const AppMap = ({
       lng: selectedLocation.longitude,
     }, !followCurrentLocation);
   }, [followCurrentLocation, isInitialized, selectedLocation]);
+
+  useEffect(() => {
+    const browserWindow = window as any;
+    if (!isInitialized || !mapInstanceRef.current || !browserWindow.google?.maps?.Polyline) return;
+
+    routePolylineOverlayRef.current?.setMap(null);
+    routePolylineOverlayRef.current = null;
+
+    if (!routePolyline) return;
+    const path = decodePolyline(routePolyline);
+    if (path.length < 2) return;
+
+    routePolylineOverlayRef.current = new browserWindow.google.maps.Polyline({
+      path,
+      map: mapInstanceRef.current,
+      strokeColor: '#1a73e8',
+      strokeOpacity: 0.95,
+      strokeWeight: 5,
+    });
+
+    return () => {
+      routePolylineOverlayRef.current?.setMap(null);
+      routePolylineOverlayRef.current = null;
+    };
+  }, [isInitialized, routePolyline]);
 
   useEffect(() => {
     const browserWindow = window as any;

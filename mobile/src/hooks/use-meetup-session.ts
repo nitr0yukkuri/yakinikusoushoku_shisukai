@@ -17,6 +17,8 @@ export type MeetupSummary = {
 type ETA = {
   arrivalAt: string;
   durationSeconds: number;
+  routePolyline?: string;
+  travelMode?: string;
   user?: { userId: string };
 };
 
@@ -30,13 +32,16 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const [issuedWSTicket, setIssuedWSTicket] = useState<{ meetupId: number; ticket: string }>();
   const [etas, setEtas] = useState<ETA[]>([]);
   const [clock, setClock] = useState(() => Date.now());
+  const [etaAccessDeniedMeetupIds, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
+  const [wsAccessDeniedMeetupIds, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
   const lastETAUpdateRef = useRef(0);
   const demoETATimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const etaUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
   const etaGenerationRef = useRef(0);
-  const etaAccessDeniedMeetupIdRef = useRef<number | null>(null);
   const currentCoordinateRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const initialETAReportedMeetupIdRef = useRef<number | null>(null);
+  const etaAccessDeniedMeetupIdsRef = useRef<Set<number>>(new Set());
+  const wsAccessDeniedMeetupIdsRef = useRef<Set<number>>(new Set());
   const wsTicketRequestVersionRef = useRef(0);
 
   // ★追加：到着したユーザー一覧を保存するステート
@@ -81,7 +86,6 @@ export function useMeetupSession(token: string | null, userId?: string) {
   useEffect(() => {
     lastETAUpdateRef.current = 0;
     etaGenerationRef.current += 1;
-    etaAccessDeniedMeetupIdRef.current = null;
     initialETAReportedMeetupIdRef.current = null;
     if (demoETATimerRef.current) {
       clearTimeout(demoETATimerRef.current);
@@ -101,20 +105,27 @@ export function useMeetupSession(token: string | null, userId?: string) {
       setEtas([]);
       return;
     }
-    if (etaAccessDeniedMeetupIdRef.current === activeMeetup.id) return;
+    if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
     const response = await fetch(`${apiUrl}/meetups/${activeMeetup.id}/eta`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const body = await response.json();
     if (response.status === 403) {
-      etaAccessDeniedMeetupIdRef.current = activeMeetup.id;
+      etaAccessDeniedMeetupIdsRef.current.add(activeMeetup.id);
+      setEtaAccessDeniedMeetupIds((current) => new Set(current).add(activeMeetup.id));
       setEtas([]);
       return;
     }
     if (!response.ok) throw new Error(body.error || '到着時間を取得できませんでした');
-    etaAccessDeniedMeetupIdRef.current = null;
+    setEtaAccessDeniedMeetupIds((current) => {
+      if (!current.has(activeMeetup.id)) return current;
+      const next = new Set(current);
+      next.delete(activeMeetup.id);
+      return next;
+    });
+    etaAccessDeniedMeetupIdsRef.current.delete(activeMeetup.id);
     setEtas(body.etas || []);
-  }, [activeMeetup, token]);
+  }, [activeMeetup, etaAccessDeniedMeetupIds, token]);
 
   // ★追加：バックエンドから最新の到着者一覧を取得する関数
   const refreshArrivedStatus = useCallback(async () => {
@@ -138,6 +149,10 @@ export function useMeetupSession(token: string | null, userId?: string) {
       setIssuedWSTicket(undefined);
       return;
     }
+    if (wsAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) {
+      setIssuedWSTicket(undefined);
+      return;
+    }
     const meetupId = activeMeetup.id;
     const response = await fetch(`${apiUrl}/ws/tickets`, {
       method: 'POST',
@@ -148,10 +163,23 @@ export function useMeetupSession(token: string | null, userId?: string) {
       body: JSON.stringify({ meetupId }),
     });
     const body = await response.json();
+    if (response.status === 403) {
+      wsAccessDeniedMeetupIdsRef.current.add(meetupId);
+      setWSAccessDeniedMeetupIds((current) => new Set(current).add(meetupId));
+      setIssuedWSTicket(undefined);
+      return;
+    }
     if (!response.ok) throw new Error(body.error || '位置共有を開始できませんでした');
+    setWSAccessDeniedMeetupIds((current) => {
+      if (!current.has(meetupId)) return current;
+      const next = new Set(current);
+      next.delete(meetupId);
+      return next;
+    });
+    wsAccessDeniedMeetupIdsRef.current.delete(meetupId);
     if (requestVersion !== wsTicketRequestVersionRef.current) return;
     setIssuedWSTicket({ meetupId, ticket: body.ticket });
-  }, [activeMeetup, token]);
+  }, [activeMeetup, token, wsAccessDeniedMeetupIds]);
 
   useEffect(() => {
     Promise.resolve()
@@ -170,6 +198,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
       .catch((error) => console.warn('Failed to load ETAs:', error));
       
     if (!activeMeetup) return;
+    if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
     
     // 定期的なポーリング（タイマー）
     const timer = setInterval(() => {
@@ -178,11 +207,11 @@ export function useMeetupSession(token: string | null, userId?: string) {
       refreshArrivedStatus().catch((error) => console.warn('Failed to refresh arrive status:', error)); // ★追加
     }, etaRefreshInterval);
     return () => clearInterval(timer);
-  }, [activeMeetup, refreshETAs, refreshArrivedStatus]);
+  }, [activeMeetup, etaAccessDeniedMeetupIds, refreshETAs, refreshArrivedStatus]);
 
   const updateETA = useCallback(async (coordinate: { latitude: number; longitude: number }) => {
     if (!token || !activeMeetup) return;
-    if (etaAccessDeniedMeetupIdRef.current === activeMeetup.id) return;
+    if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
     lastETAUpdateRef.current = Date.now();
     try {
       const response = await fetch(`${apiUrl}/meetups/${activeMeetup.id}/eta`, {
@@ -194,11 +223,17 @@ export function useMeetupSession(token: string | null, userId?: string) {
         body: JSON.stringify({
           latitude: coordinate.latitude,
           longitude: coordinate.longitude,
-          travelMode: 'DRIVE',
+          travelMode: 'TRANSIT',
           bufferMinutes: 5,
         }),
       });
       const body = await response.json();
+      if (response.status === 403) {
+        etaAccessDeniedMeetupIdsRef.current.add(activeMeetup.id);
+        setEtaAccessDeniedMeetupIds((current) => new Set(current).add(activeMeetup.id));
+        setEtas([]);
+        return;
+      }
       if (!response.ok) throw new Error(body.error || '到着時間を計算できませんでした');
       await refreshETAs();
       setClock(Date.now());
@@ -206,7 +241,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
       lastETAUpdateRef.current = 0;
       console.warn('Failed to update ETA:', error);
     }
-  }, [activeMeetup, refreshETAs, token]);
+  }, [activeMeetup, etaAccessDeniedMeetupIds, refreshETAs, token]);
 
   const enqueueETAUpdate = useCallback((coordinate: { latitude: number; longitude: number }) => {
     const generation = etaGenerationRef.current;
@@ -234,6 +269,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   ) => {
     currentCoordinateRef.current = coordinate;
     if (!token || !activeMeetup) return;
+    if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
 
     if (options?.forceETARefresh) {
       if (demoETATimerRef.current) clearTimeout(demoETATimerRef.current);
@@ -304,11 +340,21 @@ export function useMeetupSession(token: string | null, userId?: string) {
   }, [activeMeetup, etas, arrivedUsers, userId]);
 
   const etaMinutes = useMemo(() => {
-    const others = etas.filter((eta) => eta.user?.userId !== userId);
+    const others = etas.filter((eta) => eta.user?.userId !== userId && eta.travelMode === 'TRANSIT');
     if (others.length === 0) return null;
     const latestArrival = Math.max(...others.map((eta) => new Date(eta.arrivalAt).getTime()));
     return Math.max(0, Math.ceil((latestArrival - clock) / 60000));
   }, [clock, etas, userId]);
+
+  const routePolyline = useMemo(() => {
+    const transitETAs = etas.filter((eta) => eta.travelMode === 'TRANSIT');
+    const ownRoute = transitETAs.find((eta) => eta.user?.userId === userId)?.routePolyline;
+    if (ownRoute) return ownRoute;
+    return transitETAs
+      .filter((eta) => eta.user?.userId !== userId)
+      .sort((left, right) => new Date(right.arrivalAt).getTime() - new Date(left.arrivalAt).getTime())[0]
+      ?.routePolyline;
+  }, [etas, userId]);
 
   const scheduleData = useMemo(() => meetups.reduce<Record<string, { id: string; title: string }[]>>(
     (result, item) => {
@@ -328,6 +374,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
 
   return { 
     activeMeetup, 
+    routePolyline: allArrived ? undefined : routePolyline,
     etaMinutes: allArrived ? null : etaMinutes, // ★全員到着ならタイマーを強制的にnullにして非表示に
     allArrived,   // ★追加
     arrivedUsers, // ★追加

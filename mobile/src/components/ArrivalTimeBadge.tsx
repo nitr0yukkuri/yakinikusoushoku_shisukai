@@ -37,6 +37,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(226, 251, 210, 0.88)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
   },
   label: {
     color: '#1f1f1f',

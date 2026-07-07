@@ -35,6 +35,7 @@ type etaResponse struct {
 	DurationSeconds int64     `json:"durationSeconds"`
 	DistanceMeters  int64     `json:"distanceMeters"`
 	BufferMinutes   int       `json:"bufferMinutes"`
+	RoutePolyline   string    `json:"routePolyline,omitempty"`
 	ArrivalAt       time.Time `json:"arrivalAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
@@ -49,6 +50,7 @@ type routesAPIRequest struct {
 	Destination       routeWaypoint `json:"destination"`
 	TravelMode        string        `json:"travelMode"`
 	RoutingPreference string        `json:"routingPreference,omitempty"`
+	DepartureTime     string        `json:"departureTime,omitempty"`
 }
 
 type routeWaypoint struct {
@@ -68,6 +70,9 @@ type routesAPIResponse struct {
 	Routes []struct {
 		Duration       string `json:"duration"`
 		DistanceMeters int64  `json:"distanceMeters"`
+		Polyline       struct {
+			EncodedPolyline string `json:"encodedPolyline"`
+		} `json:"polyline"`
 	} `json:"routes"`
 }
 
@@ -81,14 +86,7 @@ func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 		writeJSONError(w, http.StatusBadRequest, "valid origin coordinates are required")
 		return
 	}
-	travelMode := strings.ToUpper(strings.TrimSpace(req.TravelMode))
-	if travelMode == "" {
-		travelMode = "DRIVE"
-	}
-	if travelMode != "DRIVE" && travelMode != "WALK" && travelMode != "BICYCLE" && travelMode != "TRANSIT" {
-		writeJSONError(w, http.StatusBadRequest, "travelMode must be DRIVE, WALK, BICYCLE, or TRANSIT")
-		return
-	}
+	travelMode := "TRANSIT"
 	bufferMinutes := 5
 	if req.BufferMinutes != nil {
 		bufferMinutes = *req.BufferMinutes
@@ -119,7 +117,7 @@ func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 		return
 	}
 
-	durationSeconds, distanceMeters, err := requestGoogleRoute(ctx, req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
+	durationSeconds, distanceMeters, routePolyline, err := requestGoogleRoute(ctx, req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
 	if err != nil {
 		log.Printf("route calculation failed; using fallback ETA: meetup=%d user=%d mode=%s err=%v", meetupID, userNo, travelMode, err)
 		durationSeconds, distanceMeters = estimateFallbackRoute(req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
@@ -130,20 +128,21 @@ func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 	err = pool.QueryRow(ctx, `
 		INSERT INTO meetup_arrival_estimates (
 			meetup_id, user_id, travel_mode, duration_seconds, distance_meters,
-			buffer_minutes, arrival_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+			buffer_minutes, route_polyline, arrival_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
 		ON CONFLICT (meetup_id, user_id) DO UPDATE SET
 			travel_mode = EXCLUDED.travel_mode,
 			duration_seconds = EXCLUDED.duration_seconds,
 			distance_meters = EXCLUDED.distance_meters,
 			buffer_minutes = EXCLUDED.buffer_minutes,
+			route_polyline = EXCLUDED.route_polyline,
 			arrival_at = EXCLUDED.arrival_at,
 			updated_at = now()
 		RETURNING meetup_id, travel_mode, duration_seconds, distance_meters,
-			buffer_minutes, arrival_at, updated_at
-	`, meetupID, userNo, travelMode, durationSeconds, distanceMeters, bufferMinutes, arrivalAt).Scan(
+			buffer_minutes, COALESCE(route_polyline, ''), arrival_at, updated_at
+	`, meetupID, userNo, travelMode, durationSeconds, distanceMeters, bufferMinutes, routePolyline, arrivalAt).Scan(
 		&saved.MeetupID, &saved.TravelMode, &saved.DurationSeconds, &saved.DistanceMeters,
-		&saved.BufferMinutes, &saved.ArrivalAt, &saved.UpdatedAt,
+		&saved.BufferMinutes, &saved.RoutePolyline, &saved.ArrivalAt, &saved.UpdatedAt,
 	)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to save ETA")
@@ -161,7 +160,7 @@ func listMeetupETAs(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, 
 	}
 	rows, err := pool.Query(ctx, `
 		SELECT e.meetup_id, e.travel_mode, e.duration_seconds, e.distance_meters,
-			e.buffer_minutes, e.arrival_at, e.updated_at,
+			e.buffer_minutes, COALESCE(e.route_polyline, ''), e.arrival_at, e.updated_at,
 			u.user_id, COALESCE(u.name, ''),
 			COALESCE(NULLIF(u.profile_image, ''), NULLIF(u.picture_url, ''), '')
 		FROM meetup_arrival_estimates e
@@ -181,7 +180,7 @@ func listMeetupETAs(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, 
 		var item meetupETA
 		if err := rows.Scan(
 			&item.MeetupID, &item.TravelMode, &item.DurationSeconds, &item.DistanceMeters,
-			&item.BufferMinutes, &item.ArrivalAt, &item.UpdatedAt,
+			&item.BufferMinutes, &item.RoutePolyline, &item.ArrivalAt, &item.UpdatedAt,
 			&item.User.UserID, &item.User.Name, &item.User.ProfileImage,
 		); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "failed to read ETAs")
@@ -196,10 +195,10 @@ func listMeetupETAs(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, 
 	writeJSON(w, http.StatusOK, map[string]any{"etas": etas})
 }
 
-func requestGoogleRoute(ctx context.Context, originLat, originLng, destinationLat, destinationLng float64, travelMode string) (int64, int64, error) {
+func requestGoogleRoute(ctx context.Context, originLat, originLng, destinationLat, destinationLng float64, travelMode string) (int64, int64, string, error) {
 	apiKey := strings.TrimSpace(os.Getenv("GOOGLE_MAPS_API_KEY"))
 	if apiKey == "" {
-		return 0, 0, fmt.Errorf("GOOGLE_MAPS_API_KEY is not configured")
+		return 0, 0, "", fmt.Errorf("GOOGLE_MAPS_API_KEY is not configured")
 	}
 	payload := routesAPIRequest{
 		Origin:      routeWaypoint{Location: routeLocation{LatLng: routeLatLng{Latitude: originLat, Longitude: originLng}}},
@@ -209,38 +208,41 @@ func requestGoogleRoute(ctx context.Context, originLat, originLng, destinationLa
 	if travelMode == "DRIVE" {
 		payload.RoutingPreference = "TRAFFIC_AWARE"
 	}
+	if travelMode == "TRANSIT" {
+		payload.DepartureTime = time.Now().UTC().Format(time.RFC3339)
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, googleRoutesURL, bytes.NewReader(body))
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Goog-Api-Key", apiKey)
-	req.Header.Set("X-Goog-FieldMask", "routes.duration,routes.distanceMeters")
+	req.Header.Set("X-Goog-FieldMask", "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		limitedBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return 0, 0, fmt.Errorf("routes API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(limitedBody)))
+		return 0, 0, "", fmt.Errorf("routes API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(limitedBody)))
 	}
 	var result routesAPIResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	if len(result.Routes) == 0 {
-		return 0, 0, fmt.Errorf("route not found")
+		return 0, 0, "", fmt.Errorf("route not found")
 	}
 	duration, err := time.ParseDuration(result.Routes[0].Duration)
 	if err != nil {
-		return 0, 0, fmt.Errorf("invalid route duration: %w", err)
+		return 0, 0, "", fmt.Errorf("invalid route duration: %w", err)
 	}
-	return int64(duration.Seconds()), result.Routes[0].DistanceMeters, nil
+	return int64(duration.Seconds()), result.Routes[0].DistanceMeters, result.Routes[0].Polyline.EncodedPolyline, nil
 }
 
 func estimateFallbackRoute(originLat, originLng, destinationLat, destinationLng float64, travelMode string) (int64, int64) {

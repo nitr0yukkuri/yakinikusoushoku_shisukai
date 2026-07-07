@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { StyleProp, StyleSheet, ViewStyle, ActivityIndicator, View, Alert } from 'react-native';
-import MapView, { PROVIDER_GOOGLE, Region, Marker } from 'react-native-maps';
+import MapView, { PROVIDER_GOOGLE, Region, Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { ProfileAvatar } from './ProfileAvatar';
 import { getProfileImageSignature } from '../utils/profile-image';
@@ -29,6 +29,7 @@ type AppMapProps = {
     longitude: number;
   } | null;
   locationQuery?: string;
+  routePolyline?: string;
   onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
   onCurrentLocationChange?: (
     coordinate: { latitude: number; longitude: number },
@@ -47,6 +48,40 @@ interface UserLocation {
   timestamp: number;
 }
 
+const decodePolyline = (encoded: string) => {
+  const points: { latitude: number; longitude: number }[] = [];
+  let index = 0;
+  let latitude = 0;
+  let longitude = 0;
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte = 0;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+
+    latitude += (result & 1) ? ~(result >> 1) : result >> 1;
+    shift = 0;
+    result = 0;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+
+    longitude += (result & 1) ? ~(result >> 1) : result >> 1;
+    points.push({ latitude: latitude / 1e5, longitude: longitude / 1e5 });
+  }
+
+  return points;
+};
+
 export const AppMap = ({
   style,
   roomId = 'global',
@@ -57,6 +92,7 @@ export const AppMap = ({
   followCurrentLocation = false,
   selectedLocation,
   locationQuery,
+  routePolyline,
   onLocationSelect,
   onCurrentLocationChange,
   onWebSocketDisconnect,
@@ -76,6 +112,10 @@ export const AppMap = ({
   const hasCenteredOnCurrentLocationRef = useRef(false);
   const onCurrentLocationChangeRef = useRef(onCurrentLocationChange);
   const onWebSocketDisconnectRef = useRef(onWebSocketDisconnect);
+  const routeCoordinates = useMemo(
+    () => (routePolyline ? decodePolyline(routePolyline) : []),
+    [routePolyline],
+  );
 
   useEffect(() => {
     onCurrentLocationChangeRef.current = onCurrentLocationChange;
@@ -411,6 +451,15 @@ export const AppMap = ({
           </Marker>
         );
       })}
+      {routeCoordinates.length > 1 && (
+        <Polyline
+          coordinates={routeCoordinates}
+          strokeColor="#1a73e8"
+          strokeWidth={5}
+          lineCap="round"
+          lineJoin="round"
+        />
+      )}
       {selectedLocation && (
         <Marker
           coordinate={selectedLocation}

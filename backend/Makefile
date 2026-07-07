@@ -13,3 +13,5 @@ migrate:
 	psql "$${DATABASE_URL}" -f migrations/0001_init.sql
 	psql "$${DATABASE_URL}" -f migrations/0002_friends.sql
 	psql "$${DATABASE_URL}" -f migrations/0003_meetups.sql
+	psql "$${DATABASE_URL}" -f migrations/0004_notifications.sql
+	psql "$${DATABASE_URL}" -f migrations/0005_arrival_estimate_routes.sql
