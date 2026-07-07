@@ -84,7 +84,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const nextImage = getPersistableProfileImage(result.assets[0]);
       if (!nextImage) {
-        Alert.alert('エラー', 'この環境では選択した画像を保存できませんでした。別の画像を選んでください。');
+        Alert.alert('エラー', '画像が大きすぎます。別の画像を選んでください。');
         return;
       }
       imageUriRef.current = nextImage;
