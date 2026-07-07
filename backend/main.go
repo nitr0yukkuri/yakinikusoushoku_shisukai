@@ -60,7 +60,7 @@ type profileRequest struct {
 	Bio          string `json:"bio"`
 }
 
-const maxProfileImageDataURLLength = 2796267
+const maxProfileImageDataURLLength = 6990571
 
 type publicProfile struct {
 	UserID       string `json:"userId"`

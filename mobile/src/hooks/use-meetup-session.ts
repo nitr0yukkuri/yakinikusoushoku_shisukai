@@ -38,6 +38,8 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const demoETATimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const etaUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
   const etaGenerationRef = useRef(0);
+  const currentCoordinateRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const initialETAReportedMeetupIdRef = useRef<number | null>(null);
   const etaAccessDeniedMeetupIdsRef = useRef<Set<number>>(new Set());
   const wsAccessDeniedMeetupIdsRef = useRef<Set<number>>(new Set());
   const wsTicketRequestVersionRef = useRef(0);
@@ -69,6 +71,10 @@ export function useMeetupSession(token: string | null, userId?: string) {
       .filter((item) => item.membershipStatus === 'accepted'
         && (item.status === 'scheduled' || item.status === 'active'))
       .sort((left, right) => {
+        if (left.status !== right.status) {
+          if (left.status === 'active') return -1;
+          if (right.status === 'active') return 1;
+        }
         const leftTime = new Date(left.scheduledAt).getTime();
         const rightTime = new Date(right.scheduledAt).getTime();
         const leftRank = leftTime >= clock ? leftTime : Number.MAX_SAFE_INTEGER - leftTime;
@@ -80,6 +86,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   useEffect(() => {
     lastETAUpdateRef.current = 0;
     etaGenerationRef.current += 1;
+    initialETAReportedMeetupIdRef.current = null;
     if (demoETATimerRef.current) {
       clearTimeout(demoETATimerRef.current);
       demoETATimerRef.current = null;
@@ -246,10 +253,21 @@ export function useMeetupSession(token: string | null, userId?: string) {
       });
   }, [updateETA]);
 
+  useEffect(() => {
+    if (!token || !activeMeetup) return;
+    if (initialETAReportedMeetupIdRef.current === activeMeetup.id) return;
+    const coordinate = currentCoordinateRef.current;
+    if (!coordinate) return;
+    initialETAReportedMeetupIdRef.current = activeMeetup.id;
+    lastETAUpdateRef.current = Date.now();
+    enqueueETAUpdate(coordinate);
+  }, [activeMeetup, enqueueETAUpdate, token]);
+
   const reportCurrentLocation = useCallback((
     coordinate: { latitude: number; longitude: number },
     options?: { forceETARefresh?: boolean },
   ) => {
+    currentCoordinateRef.current = coordinate;
     if (!token || !activeMeetup) return;
     if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
 

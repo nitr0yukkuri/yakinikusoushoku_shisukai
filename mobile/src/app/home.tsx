@@ -132,7 +132,7 @@ export default function HomeScreen() {
       ) : null}
 
       {/* ★追加：自分が到着していない間だけ「到着ボタン」を表示する */}
-      {activeMeetup && !arrivedUsers.includes(profile?.userId || '') && (
+      {activeMeetup?.status === 'active' && !arrivedUsers.includes(profile?.userId || '') && (
         <View style={styles.arriveButtonContainer} pointerEvents="box-none">
           <TouchableOpacity 
             style={styles.arriveButton}
