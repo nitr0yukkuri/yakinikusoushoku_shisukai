@@ -32,6 +32,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
   const [bio, setBio] = useState<string>(profile?.bio || '');
   const [imageUri, setImageUri] = useState<string | null>(avatarUrl);
   const imageUriRef = useRef<string | null>(avatarUrl);
+  const [imageError, setImageError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const hasOverLimitValue = userId.length > 20 || name.length > 20;
 
@@ -84,9 +85,11 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const nextImage = getPersistableProfileImage(result.assets[0]);
       if (!nextImage) {
+        setImageError('画像が大きすぎます。5MB以下の画像を選んでください。');
         Alert.alert('エラー', '画像が大きすぎます。別の画像を選んでください。');
         return;
       }
+      setImageError('');
       imageUriRef.current = nextImage;
       setImageUri(nextImage);
     }
@@ -159,6 +162,7 @@ export default function ProfileEditSection({ onSaveSuccess }: ProfileEditSection
           style={styles.avatar}
         />
       </TouchableOpacity>
+      {imageError ? <Text style={styles.imageErrorText}>{imageError}</Text> : null}
 
       <View style={styles.inputContainer}>
         <Text style={styles.label}>ユーザーID</Text>
@@ -291,6 +295,13 @@ const styles = StyleSheet.create({
     color: '#c62828',
     fontSize: 12,
     marginTop: 4,
+  },
+  imageErrorText: {
+    color: '#c62828',
+    fontSize: 12,
+    marginTop: -12,
+    marginBottom: 16,
+    textAlign: 'center',
   },
   limitWarning: {
     color: '#c62828',
