@@ -30,6 +30,7 @@ type AppMapProps = {
   } | null;
   locationQuery?: string;
   routePolyline?: string;
+  hideSharedLocations?: boolean;
   onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
   onCurrentLocationChange?: (
     coordinate: { latitude: number; longitude: number },
@@ -93,6 +94,7 @@ export const AppMap = ({
   selectedLocation,
   locationQuery,
   routePolyline,
+  hideSharedLocations = false,
   onLocationSelect,
   onCurrentLocationChange,
   onWebSocketDisconnect,
@@ -173,7 +175,7 @@ export const AppMap = ({
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'LOCATION_UPDATE') {
+        if (data.type === 'LOCATION_UPDATE' && !hideSharedLocations) {
           if (data.userId !== userId) {
             setLocations((prev) => ({
               ...prev,
@@ -239,7 +241,7 @@ export const AppMap = ({
       setLocations({});
       markerProfileVersionsRef.current = {};
     };
-  }, [roomId, userId, wsTicket]);
+  }, [hideSharedLocations, roomId, userId, wsTicket]);
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
@@ -427,7 +429,7 @@ export const AppMap = ({
           </View>
         </Marker>
       )}
-      {Object.values(locations).map((loc) => {
+      {!hideSharedLocations && Object.values(locations).map((loc) => {
         const markerId = loc.userId;
         const markerImageKey = `${loc.userName}:${getProfileImageSignature(loc.profileImage)}`;
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -33,6 +33,24 @@ import { useProfile } from '../contexts/profile-context';
 import { useMeetupSession } from '../hooks/use-meetup-session';
 import { useNotifications } from '../hooks/use-notifications';
 import { getProfileImageSignature } from '../utils/profile-image';
+
+const arriveButtonDistanceMeters = 100;
+
+type MapCoordinate = {
+  latitude: number;
+  longitude: number;
+};
+
+const distanceInMeters = (origin: MapCoordinate, destination: MapCoordinate) => {
+  const toRadians = (value: number) => value * Math.PI / 180;
+  const latitudeDelta = toRadians(destination.latitude - origin.latitude);
+  const longitudeDelta = toRadians(destination.longitude - origin.longitude);
+  const latitude1 = toRadians(origin.latitude);
+  const latitude2 = toRadians(destination.latitude);
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(latitude1) * Math.cos(latitude2) * Math.sin(longitudeDelta / 2) ** 2;
+  return Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+};
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -74,9 +92,13 @@ export default function HomeScreen() {
   const [isMeetupSettingVisible, setMeetupSettingVisible] = useState(false);
   const [isFriendPopupVisible, setFriendPopupVisible] = useState(false);
   const [isSpotPopupVisible, setSpotPopupVisible] = useState(false);
+  const [isFriendSearchVisible, setFriendSearchVisible] = useState(false);
+  const [isFriendQRVisible, setFriendQRVisible] = useState(false);
+  const [isFriendRequestsVisible, setFriendRequestsVisible] = useState(false);
 
   const [selectedDate, setSelectedDate] = useState('');
   const [editingMeetupId, setEditingMeetupId] = useState<number | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<MapCoordinate | null>(null);
 
   const selectedEvents = selectedDate
     ? scheduleData[selectedDate] || []
@@ -98,6 +120,34 @@ export default function HomeScreen() {
     latitude: activeMeetup.latitude,
     longitude: activeMeetup.longitude,
   } : null, [activeMeetup]);
+  const handleCurrentLocationChange = useCallback((
+    coordinate: MapCoordinate,
+    options?: { forceETARefresh?: boolean },
+  ) => {
+    setCurrentLocation(coordinate);
+    reportCurrentLocation(coordinate, options);
+  }, [reportCurrentLocation]);
+  const isAnyPopupVisible = isPopupVisible
+    || isProfilePopupVisible
+    || isSettingsVisible
+    || isSystemVisible
+    || isPastimeVisible
+    || isCalendarPopupVisible
+    || isMeetupSettingVisible
+    || isFriendPopupVisible
+    || isSpotPopupVisible
+    || isFriendSearchVisible
+    || isFriendQRVisible
+    || isFriendRequestsVisible;
+  const shouldShowArriveButton = (() => {
+    if (!activeMeetup || isAnyPopupVisible || arrivedUsers.includes(profile?.userId || '')) {
+      return false;
+    }
+    if (!activeMeetupLocation || !currentLocation) {
+      return false;
+    }
+    return distanceInMeters(currentLocation, activeMeetupLocation) <= arriveButtonDistanceMeters;
+  })();
 
   const hasEvents = selectedEvents.length > 0;
 
@@ -105,10 +155,6 @@ export default function HomeScreen() {
     setSelectedDate(dateString);
     setEditingMeetupId(null);
   };
-
-  const [isFriendSearchVisible, setFriendSearchVisible] = useState(false);
-  const [isFriendQRVisible, setFriendQRVisible] = useState(false);
-  const [isFriendRequestsVisible, setFriendRequestsVisible] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -122,17 +168,18 @@ export default function HomeScreen() {
         followCurrentLocation
         selectedLocation={activeMeetupLocation}
         routePolyline={routePolyline}
-        onCurrentLocationChange={reportCurrentLocation}
+        hideSharedLocations={allArrived}
+        onCurrentLocationChange={handleCurrentLocationChange}
         onWebSocketDisconnect={reconnectWebSocket}
       />
       
       {/* ★変更：etaMinutes が null になれば非表示になる */}
-      {activeMeetup && etaMinutes !== null ? (
+      {activeMeetup && etaMinutes !== null && !isAnyPopupVisible ? (
         <ArrivalTimeBadge minutes={etaMinutes} style={styles.arrivalBadge} />
       ) : null}
 
       {/* ★追加：自分が到着していない間だけ「到着ボタン」を表示する */}
-      {activeMeetup?.status === 'active' && !arrivedUsers.includes(profile?.userId || '') && (
+      {shouldShowArriveButton && (
         <View style={styles.arriveButtonContainer} pointerEvents="box-none">
           <TouchableOpacity 
             style={styles.arriveButton}
@@ -142,7 +189,7 @@ export default function HomeScreen() {
             }}
             activeOpacity={0.8}
           >
-            <Text style={styles.arriveButtonText}>到着</Text>
+            <Text style={styles.arriveButtonText}>到着!</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -460,16 +507,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 85,
     alignSelf: 'center',
-    zIndex: 2,
-    elevation: 2,
+    zIndex: 1,
+    elevation: 1,
   },
   // ★追加：到着ボタンのスタイル
   arriveButtonContainer: {
     position: 'absolute',
     bottom: 110, // フッターに被らない高さ
     alignSelf: 'center',
-    zIndex: 0,
-    elevation: 0,
+    zIndex: 2,
+    elevation: 2,
   },
   arriveButton: {
     backgroundColor: '#ffffff',
