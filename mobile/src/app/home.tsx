@@ -59,6 +59,7 @@ export default function HomeScreen() {
     activeMeetup,
     etaMinutes,
     routePolyline,
+    allArrived,
     arrivedUsers,
     sendArrival,
     meetups,

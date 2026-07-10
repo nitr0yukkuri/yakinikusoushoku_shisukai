@@ -14,11 +14,6 @@ export type MeetupSummary = {
   membershipStatus: 'invited' | 'accepted' | 'declined';
 };
 
-type MeetupMember = {
-  userId: string;
-  status: 'invited' | 'accepted' | 'declined';
-};
-
 type ETA = {
   arrivalAt: string;
   durationSeconds: number;
@@ -31,7 +26,6 @@ const apiUrl = getApiUrl();
 const normalETAUpdateInterval = 120000;
 const demoETADebounceDelay = 350;
 const etaRefreshInterval = process.env.NODE_ENV === 'production' ? 5000 : 1000;
-const meetupRefreshInterval = 20000;
 const routeTravelModes = new Set(['WALK', 'TRANSIT']);
 const walkRouteThresholdMeters = 10000;
 
@@ -59,18 +53,8 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const [issuedWSTicket, setIssuedWSTicket] = useState<{ meetupId: number; ticket: string }>();
   const [etas, setEtas] = useState<ETA[]>([]);
   const [clock, setClock] = useState(() => Date.now());
-<<<<<<< HEAD
   const [, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
   const [, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
-=======
-  const [etaAccessDeniedMeetupIds, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
-  const [wsAccessDeniedMeetupIds, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
-  const [activeMeetupMembers, setActiveMeetupMembers] = useState<{
-    meetupId?: number;
-    loaded: boolean;
-    members: MeetupMember[];
-  }>({ loaded: false, members: [] });
->>>>>>> 9652c6b8f1f701508cfdf1ae46308295eda8bad0
   const lastETAUpdateRef = useRef(0);
   const demoETATimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const etaUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -117,10 +101,13 @@ export function useMeetupSession(token: string | null, userId?: string) {
         const rightTime = new Date(right.scheduledAt).getTime();
         const leftRank = leftTime >= clock ? leftTime : Number.MAX_SAFE_INTEGER - leftTime;
         const rightRank = rightTime >= clock ? rightTime : Number.MAX_SAFE_INTEGER - rightTime;
-<<<<<<< HEAD
         return leftRank - rightRank;
       })[0] || null;
   }, [clock, meetups]);
+  const activeMeetupId = activeMeetup?.id;
+  const arrivedUsers = useMemo(() => {
+    return arrivedMeetupStatus.meetupId === activeMeetupId ? arrivedMeetupStatus.users : [];
+  }, [activeMeetupId, arrivedMeetupStatus]);
 
   useEffect(() => {
     lastETAUpdateRef.current = 0;
@@ -176,7 +163,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
       });
       const body = await response.json();
       if (response.ok) {
-        setArrivedUsers(body.arrivedUsers || []);
+        setArrivedMeetupStatus({ meetupId: activeMeetup.id, users: body.arrivedUsers || [] });
       }
     } catch (error) {
       console.warn('Failed to fetch arrived status:', error);
@@ -435,6 +422,3 @@ export function useMeetupSession(token: string | null, userId?: string) {
     wsTicket 
   };
 }
-=======
-        return leftRank
->>>>>>> 9652c6b8f1f701508cfdf1ae46308295eda8bad0
