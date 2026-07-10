@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   iconSection: { alignItems: 'center', marginBottom: 40 },
   iconPreview: {
     width: 100, height: 100, borderRadius: 50, backgroundColor: '#FFFFFF',
-    borderWidth: 2, borderColor: '#004499', borderStyle: 'dashed',
+    borderWidth: 2, borderColor: '#000000',
     justifyContent: 'center', alignItems: 'center', marginBottom: 10, overflow: 'hidden',
   },
   hasImageIcon: { width: '100%', height: '100%', borderRadius: 50 },

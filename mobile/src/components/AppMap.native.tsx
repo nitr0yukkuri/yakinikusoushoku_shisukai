@@ -403,6 +403,8 @@ export const AppMap = ({
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
       } : INITIAL_REGION}
+      minZoomLevel={8}
+      maxZoomLevel={18}
       showsUserLocation={false}
       showsMyLocationButton={true}
       onPress={(event) => onLocationSelect?.(event.nativeEvent.coordinate)}
@@ -454,13 +456,18 @@ export const AppMap = ({
         );
       })}
       {routeCoordinates.length > 1 && (
-        <Polyline
-          coordinates={routeCoordinates}
-          strokeColor="#1a73e8"
-          strokeWidth={5}
-          lineCap="round"
-          lineJoin="round"
-        />
+        <>
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor="#111111"
+            strokeWidth={5}
+          />
+          <Polyline
+            coordinates={routeCoordinates}
+            strokeColor="#4285F4"
+            strokeWidth={3}
+          />
+        </>
       )}
       {selectedLocation && (
         <Marker

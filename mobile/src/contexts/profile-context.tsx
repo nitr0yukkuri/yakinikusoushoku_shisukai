@@ -171,7 +171,7 @@ export function ProfileProvider({ children }: React.PropsWithChildren) {
     token,
     profile,
     isHydrated,
-    avatarUrl: profile?.profileImage || null,
+    avatarUrl: profile?.profileImage || profile?.pictureUrl || null,
     setSession,
     saveProfile,
     logout,
