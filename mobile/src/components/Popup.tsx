@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Dimensions, Animated, TouchableWithoutFeedback, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; 
 
@@ -35,8 +35,8 @@ export const Popup: React.FC<PopupProps> = ({
   const [isRendered, setIsRendered] = useState(false);
   
   const [popupID] = useState(() => Symbol('popup'));
-  const translateAnim = useRef(new Animated.Value(slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+  const [translateAnim] = useState(() => new Animated.Value(slideDirection === 'right' ? SCREEN_WIDTH : SCREEN_HEIGHT));
+  const [opacity] = useState(() => new Animated.Value(0));
   const transformDirection = !visible && closingWithParentPopupID === popupID ? 'bottom' : slideDirection;
 
   useEffect(() => {
@@ -121,7 +121,7 @@ export const Popup: React.FC<PopupProps> = ({
         setIsRendered(false);
       });
     }
-  }, [visible, popupID, slideDirection]);
+  }, [visible, popupID, slideDirection, onClose, opacity, translateAnim]);
 
   if (!visible && !isRendered) return null;
 

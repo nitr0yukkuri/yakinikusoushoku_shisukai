@@ -8,7 +8,11 @@ export default function FriendScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <Stack.Screen options={{ title: 'フレンド' }} />
-      <FriendPanel />
+      <FriendPanel
+        onOpenSearch={() => undefined}
+        onOpenQR={() => undefined}
+        onOpenRequests={() => undefined}
+      />
     </SafeAreaView>
   );
 }

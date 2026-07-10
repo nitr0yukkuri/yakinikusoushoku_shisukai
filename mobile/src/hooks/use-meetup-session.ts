@@ -53,8 +53,8 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const [issuedWSTicket, setIssuedWSTicket] = useState<{ meetupId: number; ticket: string }>();
   const [etas, setEtas] = useState<ETA[]>([]);
   const [clock, setClock] = useState(() => Date.now());
-  const [etaAccessDeniedMeetupIds, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
-  const [wsAccessDeniedMeetupIds, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
+  const [, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
+  const [, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
   const lastETAUpdateRef = useRef(0);
   const demoETATimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const etaUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -148,7 +148,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
     });
     etaAccessDeniedMeetupIdsRef.current.delete(activeMeetup.id);
     setEtas(body.etas || []);
-  }, [activeMeetup, etaAccessDeniedMeetupIds, token]);
+  }, [activeMeetup, token]);
 
   // ★追加：バックエンドから最新の到着者一覧を取得する関数
   const refreshArrivedStatus = useCallback(async () => {
@@ -202,7 +202,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
     wsAccessDeniedMeetupIdsRef.current.delete(meetupId);
     if (requestVersion !== wsTicketRequestVersionRef.current) return;
     setIssuedWSTicket({ meetupId, ticket: body.ticket });
-  }, [activeMeetup, token, wsAccessDeniedMeetupIds]);
+  }, [activeMeetup, token]);
 
   useEffect(() => {
     Promise.resolve()
@@ -230,7 +230,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
       refreshArrivedStatus().catch((error) => console.warn('Failed to refresh arrive status:', error)); // ★追加
     }, etaRefreshInterval);
     return () => clearInterval(timer);
-  }, [activeMeetup, etaAccessDeniedMeetupIds, refreshETAs, refreshArrivedStatus]);
+  }, [activeMeetup, refreshETAs, refreshArrivedStatus]);
 
   const updateETA = useCallback(async (coordinate: { latitude: number; longitude: number }) => {
     if (!token || !activeMeetup) return;
@@ -265,7 +265,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
       lastETAUpdateRef.current = 0;
       console.warn('Failed to update ETA:', error);
     }
-  }, [activeMeetup, etaAccessDeniedMeetupIds, refreshETAs, token]);
+  }, [activeMeetup, refreshETAs, token]);
 
   const enqueueETAUpdate = useCallback((coordinate: { latitude: number; longitude: number }) => {
     const generation = etaGenerationRef.current;
