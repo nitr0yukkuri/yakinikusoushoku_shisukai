@@ -33,6 +33,7 @@ type AppMapProps = {
   } | null;
   locationQuery?: string;
   routePolyline?: string;
+  hideSharedLocations?: boolean;
   onLocationSelect?: (coordinate: { latitude: number; longitude: number }, address?: string) => void;
   onCurrentLocationChange?: (
     coordinate: { latitude: number; longitude: number },
@@ -239,6 +240,7 @@ export const AppMap = ({
   selectedLocation,
   locationQuery,
   routePolyline,
+  hideSharedLocations = false,
   onLocationSelect,
   onCurrentLocationChange,
   onWebSocketDisconnect,
@@ -316,6 +318,7 @@ export const AppMap = ({
 
   const applyRemoteLocation = useCallback((data: RemoteLocationMessage) => {
     const browserWindow = window as any;
+    if (hideSharedLocations) return false;
     if (!browserWindow.google?.maps?.Marker || !mapInstanceRef.current) return false;
 
     const position = { lat: data.lat, lng: data.lng };
@@ -354,7 +357,15 @@ export const AppMap = ({
     }
 
     return true;
-  }, []);
+  }, [hideSharedLocations]);
+
+  useEffect(() => {
+    if (!hideSharedLocations) return;
+    Object.values(otherMarkersRef.current).forEach((marker: any) => marker.setMap(null));
+    otherMarkersRef.current = {};
+    markerProfileVersionsRef.current = {};
+    pendingLocationsRef.current = {};
+  }, [hideSharedLocations]);
 
   useEffect(() => {
     if (!isInitialized) return;
@@ -389,7 +400,7 @@ export const AppMap = ({
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as RemoteLocationMessage;
-        if (data.type === 'LOCATION_UPDATE' && data.userId !== userId) {
+        if (data.type === 'LOCATION_UPDATE' && data.userId !== userId && !hideSharedLocations) {
           pendingLocationsRef.current[data.userId] = data;
           if (applyRemoteLocation(data)) {
             delete pendingLocationsRef.current[data.userId];
@@ -417,7 +428,7 @@ export const AppMap = ({
       markerProfileVersionsRef.current = {};
       pendingLocationsRef.current = {};
     };
-  }, [applyRemoteLocation, roomId, userId, wsTicket]);
+  }, [applyRemoteLocation, hideSharedLocations, roomId, userId, wsTicket]);
 
   const moveSelectedMarker = (position: { lat: number; lng: number }, shouldPan = true) => {
     const browserWindow = window as any;

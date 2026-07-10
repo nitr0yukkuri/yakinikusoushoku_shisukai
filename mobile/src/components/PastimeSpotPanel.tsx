@@ -51,6 +51,15 @@ const formatDistance = (meters: number) => meters < 1000
   ? `${meters}m`
   : `${(meters / 1000).toFixed(1)}km`;
 
+const prioritizeMatsuya = (items: Spot[]) => {
+  return [...items].sort((left, right) => {
+    const leftIsMatsuya = left.name.includes('松屋');
+    const rightIsMatsuya = right.name.includes('松屋');
+    if (leftIsMatsuya === rightIsMatsuya) return 0;
+    return leftIsMatsuya ? -1 : 1;
+  });
+};
+
 export default function PastimeSpotPanel() {
   const { token, profile, avatarUrl } = useProfile();
   const [meetup, setMeetup] = useState<Meetup | null>(null);
@@ -126,8 +135,11 @@ export default function PastimeSpotPanel() {
       })
       .then((items) => {
         if (cancelled) return;
-        setSpots(items);
-        setSelectedSpot(items[0] || null);
+        const sortedItems = category.label === 'ごはん'
+          ? prioritizeMatsuya(items)
+          : items;
+        setSpots(sortedItems);
+        setSelectedSpot(sortedItems[0] || null);
       })
       .catch((reason) => {
         if (cancelled) return;

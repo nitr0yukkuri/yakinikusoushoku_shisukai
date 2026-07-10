@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { getApiUrl } from '../utils/api-url';
 
@@ -27,17 +27,15 @@ export function useNotifications(token: string | null) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(Boolean(token));
   const [error, setError] = useState('');
-  const refreshStoppedRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!token || refreshStoppedRef.current) return;
+    if (!token) return;
     try {
       const response = await fetch(`${apiUrl}/notifications`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const body = await response.json();
       if (!response.ok) {
-        refreshStoppedRef.current = true;
         throw new Error('通知を読み込めませんでした');
       }
       setItems(body.notifications || []);
@@ -52,7 +50,6 @@ export function useNotifications(token: string | null) {
 
   useEffect(() => {
     if (!token) return;
-    refreshStoppedRef.current = false;
     Promise.resolve().then(refresh);
     const timer = setInterval(refresh, 3000);
     return () => clearInterval(timer);
