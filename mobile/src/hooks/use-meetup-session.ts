@@ -31,7 +31,6 @@ const apiUrl = getApiUrl();
 const normalETAUpdateInterval = 120000;
 const demoETADebounceDelay = 350;
 const etaRefreshInterval = process.env.NODE_ENV === 'production' ? 5000 : 1000;
-const meetupRefreshInterval = 20000;
 const routeTravelModes = new Set(['WALK', 'TRANSIT']);
 const walkRouteThresholdMeters = 10000;
 
@@ -59,8 +58,8 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const [issuedWSTicket, setIssuedWSTicket] = useState<{ meetupId: number; ticket: string }>();
   const [etas, setEtas] = useState<ETA[]>([]);
   const [clock, setClock] = useState(() => Date.now());
-  const [etaAccessDeniedMeetupIds, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
-  const [wsAccessDeniedMeetupIds, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
+  const [, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
+  const [, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
   const [activeMeetupMembers, setActiveMeetupMembers] = useState<{
     meetupId?: number;
     loaded: boolean;
@@ -132,9 +131,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   }, [activeMeetupId]);
 
   useEffect(() => {
-    if (!token || !activeMeetupId) {
-      return;
-    }
+    if (!token || !activeMeetupId) return;
     let cancelled = false;
     fetch(`${apiUrl}/meetups/${activeMeetupId}`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -203,7 +200,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
     });
     etaAccessDeniedMeetupIdsRef.current.delete(activeMeetup.id);
     setEtas(body.etas || []);
-  }, [activeMeetup, etaAccessDeniedMeetupIds, token]);
+  }, [activeMeetup, token]);
 
   // ★追加：バックエンドから最新の到着者一覧を取得する関数
   const refreshArrivedStatus = useCallback(async () => {
@@ -214,12 +211,12 @@ export function useMeetupSession(token: string | null, userId?: string) {
       });
       const body = await response.json();
       if (response.ok) {
-        mergeArrivedUsers(body.arrivedUsers || [], activeMeetup.id);
+        setArrivedMeetupStatus({ meetupId: activeMeetup.id, users: body.arrivedUsers || [] });
       }
     } catch (error) {
       console.warn('Failed to fetch arrived status:', error);
     }
-  }, [activeMeetup, mergeArrivedUsers, token]);
+  }, [activeMeetup, token]);
 
   const requestWSTicket = useCallback(async () => {
     const requestVersion = ++wsTicketRequestVersionRef.current;
@@ -257,7 +254,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
     wsAccessDeniedMeetupIdsRef.current.delete(meetupId);
     if (requestVersion !== wsTicketRequestVersionRef.current) return;
     setIssuedWSTicket({ meetupId, ticket: body.ticket });
-  }, [activeMeetup, token, wsAccessDeniedMeetupIds]);
+  }, [activeMeetup, token]);
 
   useEffect(() => {
     Promise.resolve()
@@ -268,14 +265,6 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const reconnectWebSocket = useCallback(() => {
     requestWSTicket().catch((error) => console.warn('Failed to reconnect WebSocket:', error));
   }, [requestWSTicket]);
-
-  useEffect(() => {
-    if (!activeMeetupId) return;
-    const timer = setInterval(() => {
-      refreshMeetups().catch((error) => console.warn('Failed to refresh meetups:', error));
-    }, meetupRefreshInterval);
-    return () => clearInterval(timer);
-  }, [activeMeetupId, refreshMeetups]);
 
   useEffect(() => {
     Promise.resolve()
@@ -293,7 +282,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
       refreshArrivedStatus().catch((error) => console.warn('Failed to refresh arrive status:', error)); // ★追加
     }, etaRefreshInterval);
     return () => clearInterval(timer);
-  }, [activeMeetup, etaAccessDeniedMeetupIds, refreshETAs, refreshArrivedStatus]);
+  }, [activeMeetup, refreshETAs, refreshArrivedStatus]);
 
   const updateETA = useCallback(async (coordinate: { latitude: number; longitude: number }) => {
     if (!token || !activeMeetup) return;
@@ -328,7 +317,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
       lastETAUpdateRef.current = 0;
       console.warn('Failed to update ETA:', error);
     }
-  }, [activeMeetup, etaAccessDeniedMeetupIds, refreshETAs, token]);
+  }, [activeMeetup, refreshETAs, token]);
 
   const enqueueETAUpdate = useCallback((coordinate: { latitude: number; longitude: number }) => {
     const generation = etaGenerationRef.current;
@@ -409,7 +398,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || '到着を共有できませんでした');
-      mergeArrivedUsers([userId]);
+      mergeArrivedUsers([userId], activeMeetup.id);
       await refreshArrivedStatus();
     } catch (e) {
       console.error(e);

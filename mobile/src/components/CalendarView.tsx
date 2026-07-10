@@ -1,8 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Calendar } from 'react-native-calendars';
-
-import { LocaleConfig } from 'react-native-calendars';
+import { Calendar, LocaleConfig } from 'react-native-calendars';
 
 // ▼ ここから追加：カレンダーの日本語化設定
 LocaleConfig.locales['jp'] = {

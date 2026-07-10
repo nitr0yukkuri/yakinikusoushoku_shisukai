@@ -131,6 +131,9 @@ func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 		log.Printf("route calculation failed; using fallback ETA: meetup=%d user=%d mode=%s err=%v", meetupID, userNo, travelMode, err)
 		durationSeconds, distanceMeters = estimateFallbackRoute(req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
 	}
+	if routePolyline == "" {
+		routePolyline = requestRouteDisplayPolyline(ctx, req.Latitude, req.Longitude, destinationLat, destinationLng, travelMode)
+	}
 	effectiveBufferMinutes := bufferMinutesForTravelMode(travelMode, bufferMinutes)
 	now := time.Now()
 	arrivalAt := now.Add(time.Duration(durationSeconds)*time.Second + time.Duration(effectiveBufferMinutes)*time.Minute)
@@ -271,6 +274,21 @@ func bufferMinutesForTravelMode(travelMode string, baseBufferMinutes int) int {
 		return baseBufferMinutes + transitExtraBufferMinutes
 	}
 	return baseBufferMinutes
+}
+
+func requestRouteDisplayPolyline(ctx context.Context, originLat, originLng, destinationLat, destinationLng float64, travelMode string) string {
+	fallbackModes := []string{"DRIVE"}
+	if travelMode != "TRANSIT" {
+		fallbackModes = []string{"WALK", "DRIVE"}
+	}
+	for _, fallbackMode := range fallbackModes {
+		_, _, routePolyline, err := requestGoogleRoute(ctx, originLat, originLng, destinationLat, destinationLng, fallbackMode)
+		if err == nil && routePolyline != "" {
+			return routePolyline
+		}
+		log.Printf("display route polyline fallback failed: mode=%s err=%v", fallbackMode, err)
+	}
+	return ""
 }
 
 func buildRoutePolylineFromSteps(legs []struct {

@@ -8,7 +8,6 @@ import {
   Image,
   Alert, // ★追加
 } from 'react-native';
-import { useRouter } from 'expo-router';
 
 import { AppMap } from '../components/AppMap';
 import { ArrivalTimeBadge } from '../components/ArrivalTimeBadge';
@@ -53,7 +52,6 @@ const distanceInMeters = (origin: MapCoordinate, destination: MapCoordinate) => 
 };
 
 export default function HomeScreen() {
-  const router = useRouter();
   const { profile, avatarUrl, token } = useProfile();
   
   // ★追加：allArrived, arrivedUsers, sendArrival を受け取る

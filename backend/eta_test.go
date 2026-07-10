@@ -143,6 +143,33 @@ func TestBufferMinutesForTravelMode(t *testing.T) {
 	}
 }
 
+func TestRequestRouteDisplayPolylineFallsBackForTransit(t *testing.T) {
+	var requestedModes []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body routesAPIRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		requestedModes = append(requestedModes, body.TravelMode)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"routes":[{"duration":"600s","distanceMeters":5000,"polyline":{"encodedPolyline":"display123"}}]}`))
+	}))
+	defer server.Close()
+
+	previousURL := googleRoutesURL
+	googleRoutesURL = server.URL
+	t.Cleanup(func() { googleRoutesURL = previousURL })
+	t.Setenv("GOOGLE_MAPS_API_KEY", "test-key")
+
+	routePolyline := requestRouteDisplayPolyline(t.Context(), 35.0, 139.0, 35.1, 139.1, "TRANSIT")
+	if routePolyline != "display123" {
+		t.Fatalf("routePolyline = %q, want display123", routePolyline)
+	}
+	if len(requestedModes) != 1 || requestedModes[0] != "DRIVE" {
+		t.Fatalf("requested modes = %+v, want [DRIVE]", requestedModes)
+	}
+}
+
 func TestEstimateFallbackRoute(t *testing.T) {
 	duration, distance := estimateFallbackRoute(35.681236, 139.767125, 35.689634, 139.692101, "DRIVE")
 	if distance < 6000 || distance > 7000 {
