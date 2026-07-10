@@ -14,6 +14,11 @@ export type MeetupSummary = {
   membershipStatus: 'invited' | 'accepted' | 'declined';
 };
 
+type MeetupMember = {
+  userId: string;
+  status: 'invited' | 'accepted' | 'declined';
+};
+
 type ETA = {
   arrivalAt: string;
   durationSeconds: number;
@@ -55,6 +60,11 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const [clock, setClock] = useState(() => Date.now());
   const [, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
   const [, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
+  const [activeMeetupMembers, setActiveMeetupMembers] = useState<{
+    meetupId?: number;
+    loaded: boolean;
+    members: MeetupMember[];
+  }>({ loaded: false, members: [] });
   const lastETAUpdateRef = useRef(0);
   const demoETATimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const etaUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -108,6 +118,44 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const arrivedUsers = useMemo(() => {
     return arrivedMeetupStatus.meetupId === activeMeetupId ? arrivedMeetupStatus.users : [];
   }, [activeMeetupId, arrivedMeetupStatus]);
+
+  const mergeArrivedUsers = useCallback((nextUsers: string[], meetupId = activeMeetupId) => {
+    if (!meetupId) return;
+    setArrivedMeetupStatus((current) => {
+      const currentUsers = current.meetupId === meetupId ? current.users : [];
+      return {
+        meetupId,
+        users: [...new Set([...currentUsers, ...nextUsers.filter(Boolean)])],
+      };
+    });
+  }, [activeMeetupId]);
+
+  useEffect(() => {
+    if (!token || !activeMeetupId) return;
+    let cancelled = false;
+    fetch(`${apiUrl}/meetups/${activeMeetupId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || '待ち合わせを取得できませんでした');
+        return body.meetup;
+      })
+      .then((meetup) => {
+        if (cancelled) return;
+        setActiveMeetupMembers({
+          meetupId: activeMeetupId,
+          loaded: true,
+          members: meetup.members || [],
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setActiveMeetupMembers({ meetupId: activeMeetupId, loaded: false, members: [] });
+        console.warn('Failed to load meetup members:', error);
+      });
+    return () => { cancelled = true; };
+  }, [activeMeetupId, token]);
 
   useEffect(() => {
     lastETAUpdateRef.current = 0;
@@ -337,7 +385,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const sendArrival = useCallback(async () => {
     if (!token || !activeMeetup || !userId) return;
     try {
-      await fetch(`${apiUrl}/meetups/arrive`, {
+      const response = await fetch(`${apiUrl}/meetups/arrive`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -348,28 +396,31 @@ export function useMeetupSession(token: string | null, userId?: string) {
           userId: userId
         })
       });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || '到着を共有できませんでした');
+      mergeArrivedUsers([userId], activeMeetup.id);
       await refreshArrivedStatus();
     } catch (e) {
       console.error(e);
     }
-  }, [activeMeetup, token, userId, refreshArrivedStatus]);
+  }, [activeMeetup, mergeArrivedUsers, token, userId, refreshArrivedStatus]);
 
   // ★追加：全員到着したかどうかを判定
   const allArrived = useMemo(() => {
     if (!activeMeetup || !userId) return false;
-    // 自分も含めた参加者のリストを生成
-    const otherUserIds = etas.map(e => e.user?.userId).filter(Boolean) as string[];
-    const participants = [userId, ...otherUserIds];
-    
-    // ぼっち（一人だけ）の場合は自分が到着したらtrueにする
-    if (participants.length === 1 && arrivedUsers.includes(userId)) return true;
-    
+    if (!activeMeetupMembers.loaded || activeMeetupMembers.meetupId !== activeMeetup.id) return false;
+    const arrivedUserSet = new Set(arrivedUsers);
+    const participants = [...new Set(activeMeetupMembers.members
+      .filter((member) => member.status === 'accepted')
+      .map((member) => member.userId)
+      .filter(Boolean))];
+
     // 参加者全員が到着記録（arrivedUsers）に入っているか確認
     if (participants.length > 0) {
-      return participants.every(id => arrivedUsers.includes(id));
+      return participants.every(id => arrivedUserSet.has(id));
     }
     return false;
-  }, [activeMeetup, etas, arrivedUsers, userId]);
+  }, [activeMeetup, activeMeetupMembers, arrivedUsers, userId]);
 
   const etaMinutes = useMemo(() => {
     const others = etas.filter((eta) => eta.user?.userId !== userId);
