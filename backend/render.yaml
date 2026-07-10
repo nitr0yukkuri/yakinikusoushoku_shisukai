@@ -2,18 +2,25 @@
 services:
   - type: web
     name: matsunya-backend
-    env: docker
-    plan: starter
+    runtime: docker
+    plan: free
     rootDir: backend
     dockerfilePath: Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
+        sync: false
       - key: GOOGLE_MAPS_API_KEY
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: GOOGLE_CLIENT_ID
+        sync: false
       - key: GOOGLE_IOS_CLIENT_ID
+        sync: false
       - key: GOOGLE_ANDROID_CLIENT_ID
+        sync: false
       - key: ENV
         value: production
       - key: ALLOWED_ORIGINS
+        sync: false
