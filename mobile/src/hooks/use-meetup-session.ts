@@ -14,6 +14,11 @@ export type MeetupSummary = {
   membershipStatus: 'invited' | 'accepted' | 'declined';
 };
 
+type MeetupMember = {
+  userId: string;
+  status: 'invited' | 'accepted' | 'declined';
+};
+
 type ETA = {
   arrivalAt: string;
   durationSeconds: number;
@@ -27,6 +32,27 @@ const normalETAUpdateInterval = 120000;
 const demoETADebounceDelay = 350;
 const etaRefreshInterval = process.env.NODE_ENV === 'production' ? 5000 : 1000;
 const meetupRefreshInterval = 20000;
+const routeTravelModes = new Set(['WALK', 'TRANSIT']);
+const walkRouteThresholdMeters = 10000;
+
+const distanceMeters = (
+  origin: { latitude: number; longitude: number },
+  destination: { latitude: number; longitude: number },
+) => {
+  const earthRadiusMeters = 6371000;
+  const originLat = origin.latitude * Math.PI / 180;
+  const destinationLat = destination.latitude * Math.PI / 180;
+  const latitudeDelta = (destination.latitude - origin.latitude) * Math.PI / 180;
+  const longitudeDelta = (destination.longitude - origin.longitude) * Math.PI / 180;
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(originLat) * Math.cos(destinationLat) * Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const selectRouteTravelMode = (
+  origin: { latitude: number; longitude: number },
+  destination: { latitude: number; longitude: number },
+) => (distanceMeters(origin, destination) <= walkRouteThresholdMeters ? 'WALK' : 'TRANSIT');
 
 export function useMeetupSession(token: string | null, userId?: string) {
   const [meetups, setMeetups] = useState<MeetupSummary[]>([]);
@@ -35,6 +61,11 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const [clock, setClock] = useState(() => Date.now());
   const [etaAccessDeniedMeetupIds, setEtaAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
   const [wsAccessDeniedMeetupIds, setWSAccessDeniedMeetupIds] = useState<Set<number>>(() => new Set());
+  const [activeMeetupMembers, setActiveMeetupMembers] = useState<{
+    meetupId?: number;
+    loaded: boolean;
+    members: MeetupMember[];
+  }>({ loaded: false, members: [] });
   const lastETAUpdateRef = useRef(0);
   const demoETATimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const etaUpdateQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -43,6 +74,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const initialETAReportedMeetupIdRef = useRef<number | null>(null);
   const etaAccessDeniedMeetupIdsRef = useRef<Set<number>>(new Set());
   const wsAccessDeniedMeetupIdsRef = useRef<Set<number>>(new Set());
+  const lastRouteTravelModeRef = useRef<string | null>(null);
   const wsTicketRequestVersionRef = useRef(0);
 
   // ★追加：到着したユーザー一覧を保存するステート
@@ -100,8 +132,38 @@ export function useMeetupSession(token: string | null, userId?: string) {
   }, [activeMeetupId]);
 
   useEffect(() => {
+    if (!token || !activeMeetupId) {
+      return;
+    }
+    let cancelled = false;
+    fetch(`${apiUrl}/meetups/${activeMeetupId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || '待ち合わせを取得できませんでした');
+        return body.meetup;
+      })
+      .then((meetup) => {
+        if (cancelled) return;
+        setActiveMeetupMembers({
+          meetupId: activeMeetupId,
+          loaded: true,
+          members: meetup.members || [],
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setActiveMeetupMembers({ meetupId: activeMeetupId, loaded: false, members: [] });
+        console.warn('Failed to load meetup members:', error);
+      });
+    return () => { cancelled = true; };
+  }, [activeMeetupId, token]);
+
+  useEffect(() => {
     lastETAUpdateRef.current = 0;
     etaGenerationRef.current += 1;
+    lastRouteTravelModeRef.current = null;
     initialETAReportedMeetupIdRef.current = null;
     if (demoETATimerRef.current) {
       clearTimeout(demoETATimerRef.current);
@@ -236,6 +298,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const updateETA = useCallback(async (coordinate: { latitude: number; longitude: number }) => {
     if (!token || !activeMeetup) return;
     if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
+    const routeTravelMode = selectRouteTravelMode(coordinate, activeMeetup);
     lastETAUpdateRef.current = Date.now();
     try {
       const response = await fetch(`${apiUrl}/meetups/${activeMeetup.id}/eta`, {
@@ -247,7 +310,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
         body: JSON.stringify({
           latitude: coordinate.latitude,
           longitude: coordinate.longitude,
-          travelMode: 'TRANSIT',
+          travelMode: routeTravelMode,
           bufferMinutes: 5,
         }),
       });
@@ -294,19 +357,23 @@ export function useMeetupSession(token: string | null, userId?: string) {
     currentCoordinateRef.current = coordinate;
     if (!token || !activeMeetup) return;
     if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
+    const routeTravelMode = selectRouteTravelMode(coordinate, activeMeetup);
+    const routeModeChanged = lastRouteTravelModeRef.current !== routeTravelMode;
 
     if (options?.forceETARefresh) {
       if (demoETATimerRef.current) clearTimeout(demoETATimerRef.current);
       demoETATimerRef.current = setTimeout(() => {
         demoETATimerRef.current = null;
         lastETAUpdateRef.current = Date.now();
+        lastRouteTravelModeRef.current = routeTravelMode;
         enqueueETAUpdate(coordinate);
       }, demoETADebounceDelay);
       return;
     }
 
-    if (Date.now() - lastETAUpdateRef.current < normalETAUpdateInterval) return;
+    if (!routeModeChanged && Date.now() - lastETAUpdateRef.current < normalETAUpdateInterval) return;
     lastETAUpdateRef.current = Date.now();
+    lastRouteTravelModeRef.current = routeTravelMode;
     enqueueETAUpdate(coordinate);
   }, [activeMeetup, enqueueETAUpdate, token]);
 
@@ -352,32 +419,34 @@ export function useMeetupSession(token: string | null, userId?: string) {
   // ★追加：全員到着したかどうかを判定
   const allArrived = useMemo(() => {
     if (!activeMeetup || !userId) return false;
+    if (!activeMeetupMembers.loaded || activeMeetupMembers.meetupId !== activeMeetup.id) return false;
     const arrivedUserSet = new Set(arrivedUsers);
-    const participants = [...new Set([
-      userId,
-      ...etas.map(e => e.user?.userId).filter(Boolean),
-      ...arrivedUsers,
-    ])] as string[];
+    const participants = [...new Set(activeMeetupMembers.members
+      .filter((member) => member.status === 'accepted')
+      .map((member) => member.userId)
+      .filter(Boolean))];
 
     // 参加者全員が到着記録（arrivedUsers）に入っているか確認
     if (participants.length > 0) {
       return participants.every(id => arrivedUserSet.has(id));
     }
     return false;
-  }, [activeMeetup, etas, arrivedUsers, userId]);
+  }, [activeMeetup, activeMeetupMembers, arrivedUsers, userId]);
 
   const etaMinutes = useMemo(() => {
-    const others = etas.filter((eta) => eta.user?.userId !== userId && eta.travelMode === 'TRANSIT');
+    const others = etas.filter((eta) => eta.user?.userId !== userId);
     if (others.length === 0) return null;
-    const latestArrival = Math.max(...others.map((eta) => new Date(eta.arrivalAt).getTime()));
+    const routeModeOthers = others.filter((eta) => eta.travelMode && routeTravelModes.has(eta.travelMode));
+    const displayETAs = routeModeOthers.length > 0 ? routeModeOthers : others;
+    const latestArrival = Math.max(...displayETAs.map((eta) => new Date(eta.arrivalAt).getTime()));
     return Math.max(0, Math.ceil((latestArrival - clock) / 60000));
   }, [clock, etas, userId]);
 
   const routePolyline = useMemo(() => {
-    const transitETAs = etas.filter((eta) => eta.travelMode === 'TRANSIT');
-    const ownRoute = transitETAs.find((eta) => eta.user?.userId === userId)?.routePolyline;
+    const routeModeETAs = etas.filter((eta) => eta.travelMode && routeTravelModes.has(eta.travelMode));
+    const ownRoute = routeModeETAs.find((eta) => eta.user?.userId === userId)?.routePolyline;
     if (ownRoute) return ownRoute;
-    return transitETAs
+    return routeModeETAs
       .filter((eta) => eta.user?.userId !== userId)
       .sort((left, right) => new Date(right.arrivalAt).getTime() - new Date(left.arrivalAt).getTime())[0]
       ?.routePolyline;

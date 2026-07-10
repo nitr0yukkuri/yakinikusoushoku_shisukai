@@ -24,7 +24,7 @@ export const Footer: React.FC<FooterProps> = ({
       {/* 1. フレンド */}
       <TouchableOpacity style={styles.tab} onPress={onPressFriend}>
         <View style={styles.iconContainer}>
-          <Ionicons name="person-add-outline" size={26} color="#515151" />
+          <Ionicons name="people-outline" size={26} color="#515151" />
         </View>
         <Text style={styles.tabText}>フレンド</Text>
       </TouchableOpacity>

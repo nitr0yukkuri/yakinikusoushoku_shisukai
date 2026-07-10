@@ -108,22 +108,12 @@ const fallbackMarkerUrl = (name: string, size = 48, ringColor?: string) => {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 };
 
-const blankMarkerUrl = (size = 48, ringColor?: string) => {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-      <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="#ffffff"
-        ${ringColor ? `stroke="${ringColor}" stroke-width="${LOCATION_MARKER_RING_WIDTH}"` : ''} />
-    </svg>
-  `;
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-};
-
 const circularMarkerUrl = (name: string, profileImage?: string, size = 48, ringColor?: string) => {
   if (!profileImage) {
     return Promise.resolve(fallbackMarkerUrl(name, size, ringColor));
   }
-  if (profileImage.startsWith('data:image/') !== true || typeof document === 'undefined') {
-    return Promise.resolve(blankMarkerUrl(size, ringColor));
+  if (typeof document === 'undefined') {
+    return Promise.resolve(fallbackMarkerUrl(name, size, ringColor));
   }
 
   const cacheKey = `${size}:${ringColor || 'none'}:${getProfileImageSignature(profileImage)}`;
@@ -133,41 +123,48 @@ const circularMarkerUrl = (name: string, profileImage?: string, size = 48, ringC
   const promise = new Promise<string>((resolve) => {
     const image = new Image();
     image.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      const context = canvas.getContext('2d');
-      if (!context) {
-        resolve(blankMarkerUrl(size, ringColor));
-        return;
-      }
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext('2d');
+        if (!context) {
+          resolve(fallbackMarkerUrl(name, size, ringColor));
+          return;
+        }
 
-      const inset = ringColor ? 3 : 2;
-      const diameter = size - inset * 2;
-      context.fillStyle = '#ffffff';
-      context.beginPath();
-      context.arc(size / 2, size / 2, size / 2 - 1.5, 0, Math.PI * 2);
-      context.fill();
-      if (ringColor) {
-        context.strokeStyle = ringColor;
-        context.lineWidth = LOCATION_MARKER_RING_WIDTH;
-        context.stroke();
-      }
-      context.save();
-      context.beginPath();
-      context.arc(size / 2, size / 2, diameter / 2, 0, Math.PI * 2);
-      context.clip();
+        const inset = ringColor ? 3 : 2;
+        const diameter = size - inset * 2;
+        context.fillStyle = '#ffffff';
+        context.beginPath();
+        context.arc(size / 2, size / 2, size / 2 - 1.5, 0, Math.PI * 2);
+        context.fill();
+        if (ringColor) {
+          context.strokeStyle = ringColor;
+          context.lineWidth = LOCATION_MARKER_RING_WIDTH;
+          context.stroke();
+        }
+        context.save();
+        context.beginPath();
+        context.arc(size / 2, size / 2, diameter / 2, 0, Math.PI * 2);
+        context.clip();
 
-      const scale = Math.max(diameter / image.width, diameter / image.height);
-      const width = image.width * scale;
-      const height = image.height * scale;
-      const x = inset + (diameter - width) / 2;
-      const y = inset + (diameter - height) / 2;
-      context.drawImage(image, x, y, width, height);
-      context.restore();
-      resolve(canvas.toDataURL('image/png'));
+        const scale = Math.max(diameter / image.width, diameter / image.height);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        const x = inset + (diameter - width) / 2;
+        const y = inset + (diameter - height) / 2;
+        context.drawImage(image, x, y, width, height);
+        context.restore();
+        resolve(canvas.toDataURL('image/png'));
+      } catch {
+        resolve(fallbackMarkerUrl(name, size, ringColor));
+      }
     };
-    image.onerror = () => resolve(blankMarkerUrl(size, ringColor));
+    image.onerror = () => resolve(fallbackMarkerUrl(name, size, ringColor));
+    if (!profileImage.startsWith('data:image/')) {
+      image.crossOrigin = 'anonymous';
+    }
     image.src = profileImage;
   });
 
@@ -261,6 +258,7 @@ export const AppMap = ({
   const pendingLocationsRef = useRef<Record<string, RemoteLocationMessage>>({});
   const myMarkerRef = useRef<any>(null);
   const selectedMarkerRef = useRef<any>(null);
+  const routePolylineBorderOverlayRef = useRef<any>(null);
   const routePolylineOverlayRef = useRef<any>(null);
   const selectedLocationRef = useRef(selectedLocation);
   const onLocationSelectRef = useRef(onLocationSelect);
@@ -464,23 +462,35 @@ export const AppMap = ({
     const browserWindow = window as any;
     if (!isInitialized || !mapInstanceRef.current || !browserWindow.google?.maps?.Polyline) return;
 
+    routePolylineBorderOverlayRef.current?.setMap(null);
     routePolylineOverlayRef.current?.setMap(null);
+    routePolylineBorderOverlayRef.current = null;
     routePolylineOverlayRef.current = null;
 
     if (!routePolyline) return;
     const path = decodePolyline(routePolyline);
     if (path.length < 2) return;
 
-    routePolylineOverlayRef.current = new browserWindow.google.maps.Polyline({
+    routePolylineBorderOverlayRef.current = new browserWindow.google.maps.Polyline({
       path,
       map: mapInstanceRef.current,
-      strokeColor: '#1a73e8',
-      strokeOpacity: 0.95,
+      strokeColor: '#111111',
+      strokeOpacity: 1,
       strokeWeight: 5,
     });
 
+    routePolylineOverlayRef.current = new browserWindow.google.maps.Polyline({
+      path,
+      map: mapInstanceRef.current,
+      strokeColor: '#4285F4',
+      strokeOpacity: 1,
+      strokeWeight: 3,
+    });
+
     return () => {
+      routePolylineBorderOverlayRef.current?.setMap(null);
       routePolylineOverlayRef.current?.setMap(null);
+      routePolylineBorderOverlayRef.current = null;
       routePolylineOverlayRef.current = null;
     };
   }, [isInitialized, routePolyline]);
@@ -572,6 +582,8 @@ export const AppMap = ({
         mapInstanceRef.current = new browserWindow.google.maps.Map(mapElementRef.current, {
           center: INITIAL_REGION,
           zoom: 16,
+          minZoom: 8,
+          maxZoom: 18,
           disableDefaultUI: true,
           zoomControl: true,
         });
