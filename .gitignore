@@ -8,3 +8,5 @@ dist
 .gocache-review/
 .gradle-home/
 .npm-cache/
+.codex-work/
+outputs/

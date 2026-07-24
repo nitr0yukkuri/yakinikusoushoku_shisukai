@@ -1,0 +1,29 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://matsunya-backend.onrender.com",
+        "EXPO_PUBLIC_WS_URL": "wss://matsunya-backend.onrender.com/ws"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://matsunya-backend.onrender.com",
+        "EXPO_PUBLIC_WS_URL": "wss://matsunya-backend.onrender.com/ws"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  }
+}

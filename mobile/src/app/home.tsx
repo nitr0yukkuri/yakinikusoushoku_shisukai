@@ -164,7 +164,7 @@ export default function HomeScreen() {
         userName={profile?.name}
         profileImage={avatarUrl || undefined}
         followCurrentLocation
-        selectedLocation={activeMeetupLocation}
+        selectedLocation={allArrived ? null : activeMeetupLocation}
         routePolyline={routePolyline}
         hideSharedLocations={allArrived}
         onCurrentLocationChange={handleCurrentLocationChange}

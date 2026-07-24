@@ -1,11 +1,12 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Matsunya",
+    "slug": "matsunya",
+    "owner": "otsst",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "matsunya",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -18,7 +19,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.frontend"
+      "package": "com.matsunya.app"
     },
     "web": {
       "output": "static",
@@ -46,6 +47,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e9181f86-a592-42a8-abf4-16e49599ac5d"
+      }
     }
   }
 }

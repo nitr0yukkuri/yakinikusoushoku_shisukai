@@ -20,6 +20,7 @@ type MeetupMember = {
 };
 
 type ETA = {
+  meetupId: number;
   arrivalAt: string;
   durationSeconds: number;
   routePolyline?: string;
@@ -160,6 +161,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   useEffect(() => {
     lastETAUpdateRef.current = 0;
     etaGenerationRef.current += 1;
+    queueMicrotask(() => setEtas([]));
     lastRouteTravelModeRef.current = null;
     initialETAReportedMeetupIdRef.current = null;
     if (demoETATimerRef.current) {
@@ -181,24 +183,27 @@ export function useMeetupSession(token: string | null, userId?: string) {
       return;
     }
     if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
-    const response = await fetch(`${apiUrl}/meetups/${activeMeetup.id}/eta`, {
+    const meetupId = activeMeetup.id;
+    const generation = etaGenerationRef.current;
+    const response = await fetch(`${apiUrl}/meetups/${meetupId}/eta`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const body = await response.json();
+    if (generation !== etaGenerationRef.current) return;
     if (response.status === 403) {
-      etaAccessDeniedMeetupIdsRef.current.add(activeMeetup.id);
-      setEtaAccessDeniedMeetupIds((current) => new Set(current).add(activeMeetup.id));
+      etaAccessDeniedMeetupIdsRef.current.add(meetupId);
+      setEtaAccessDeniedMeetupIds((current) => new Set(current).add(meetupId));
       setEtas([]);
       return;
     }
     if (!response.ok) throw new Error(body.error || '到着時間を取得できませんでした');
     setEtaAccessDeniedMeetupIds((current) => {
-      if (!current.has(activeMeetup.id)) return current;
+      if (!current.has(meetupId)) return current;
       const next = new Set(current);
-      next.delete(activeMeetup.id);
+      next.delete(meetupId);
       return next;
     });
-    etaAccessDeniedMeetupIdsRef.current.delete(activeMeetup.id);
+    etaAccessDeniedMeetupIdsRef.current.delete(meetupId);
     setEtas(body.etas || []);
   }, [activeMeetup, token]);
 
@@ -432,14 +437,16 @@ export function useMeetupSession(token: string | null, userId?: string) {
   }, [clock, etas, userId]);
 
   const routePolyline = useMemo(() => {
-    const routeModeETAs = etas.filter((eta) => eta.travelMode && routeTravelModes.has(eta.travelMode));
+    if (!activeMeetup) return undefined;
+    const routeModeETAs = etas.filter((eta) => eta.meetupId === activeMeetup.id
+      && eta.travelMode && routeTravelModes.has(eta.travelMode));
     const ownRoute = routeModeETAs.find((eta) => eta.user?.userId === userId)?.routePolyline;
     if (ownRoute) return ownRoute;
     return routeModeETAs
       .filter((eta) => eta.user?.userId !== userId)
       .sort((left, right) => new Date(right.arrivalAt).getTime() - new Date(left.arrivalAt).getTime())[0]
       ?.routePolyline;
-  }, [etas, userId]);
+  }, [activeMeetup, etas, userId]);
 
   const scheduleData = useMemo(() => meetups.reduce<Record<string, { id: string; title: string }[]>>(
     (result, item) => {
