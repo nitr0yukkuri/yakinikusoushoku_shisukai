@@ -137,7 +137,8 @@ func originAllowed(origin string) bool {
 		return true
 	}
 	for _, allowed := range strings.Split(getEnv("ALLOWED_ORIGINS", ""), ",") {
-		if strings.TrimSpace(allowed) == origin {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "*" || allowed == origin {
 			return true
 		}
 	}

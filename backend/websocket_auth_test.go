@@ -45,3 +45,24 @@ func TestOriginAllowedForLocalDevelopmentOriginsInProduction(t *testing.T) {
 		}
 	}
 }
+
+func TestOriginAllowedForWildcardInProduction(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("ALLOWED_ORIGINS", "*")
+
+	if !originAllowed("https://example.com") {
+		t.Fatal("wildcard ALLOWED_ORIGINS did not allow a remote origin")
+	}
+}
+
+func TestOriginAllowedForConfiguredOriginInProduction(t *testing.T) {
+	t.Setenv("ENV", "production")
+	t.Setenv("ALLOWED_ORIGINS", "https://app.example.com, https://admin.example.com")
+
+	if !originAllowed("https://admin.example.com") {
+		t.Fatal("configured origin was rejected")
+	}
+	if originAllowed("https://other.example.com") {
+		t.Fatal("unconfigured origin was accepted")
+	}
+}
