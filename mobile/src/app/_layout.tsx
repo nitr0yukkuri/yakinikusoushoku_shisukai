@@ -13,6 +13,7 @@ export default function RootLayout() {
         <AnimatedSplashOverlay />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" />
+          <Stack.Screen name="oauth" />
           <Stack.Screen name="signup" />
           <Stack.Screen name="home" />
           <Stack.Screen name="settings" options={{ animation: 'slide_from_bottom' }} />

@@ -407,6 +407,9 @@ func main() {
 	if err := ensureAuthProfileSchema(ctxSchema, pool); err != nil {
 		log.Fatalf("auth profile schema failed: %v", err)
 	}
+	if err := ensureGoogleOAuthSchema(ctxSchema, pool); err != nil {
+		log.Fatalf("google OAuth schema failed: %v", err)
+	}
 	if err := ensureFriendSchema(ctxSchema, pool); err != nil {
 		log.Fatalf("friend schema failed: %v", err)
 	}
@@ -429,6 +432,9 @@ func main() {
 	})
 
 	http.HandleFunc("/auth/google", withCORS(handleGoogleAuth(pool)))
+	http.HandleFunc("/auth/google/start", handleGoogleOAuthStart())
+	http.HandleFunc("/auth/google/callback", handleGoogleOAuthCallback(pool))
+	http.HandleFunc("/auth/google/exchange", withCORS(handleGoogleOAuthExchange(pool)))
 	http.HandleFunc("/auth/profile", withCORS(handleAuthProfile(pool)))
 	http.HandleFunc("/profiles", withCORS(handlePublicProfile(pool)))
 	http.HandleFunc("/friends", withCORS(handleFriends(pool)))

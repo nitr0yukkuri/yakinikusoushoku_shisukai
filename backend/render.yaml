@@ -16,6 +16,10 @@ services:
         generateValue: true
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        value: https://matsunya-backend.onrender.com/auth/google/callback
       - key: GOOGLE_IOS_CLIENT_ID
         sync: false
       - key: GOOGLE_ANDROID_CLIENT_ID
