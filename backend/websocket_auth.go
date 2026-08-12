@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -151,10 +152,25 @@ func isLocalDevelopmentOrigin(origin string) bool {
 		return false
 	}
 	host := strings.ToLower(parsed.Hostname())
+	if parsed.Scheme == "exp" {
+		return isLocalDevelopmentHost(host)
+	}
 	return host == "localhost" ||
 		host == "127.0.0.1" ||
 		host == "::1" ||
 		strings.HasSuffix(host, ".loca.lt")
+}
+
+func isLocalDevelopmentHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+	if host == "u.expo.dev" || host == "exp.host" || strings.HasSuffix(host, ".exp.direct") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
 }
 
 func getEnv(key, fallback string) string {

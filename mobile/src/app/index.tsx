@@ -1,4 +1,7 @@
+import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef } from 'react';
@@ -36,15 +39,27 @@ export default function LoginScreen() {
   const router = useRouter();
   const { profile, isHydrated, setSession } = useProfile();
   const isOAuthLoginRef = useRef(false);
+  const isExpoGo =
+    Platform.OS !== 'web' &&
+    (Constants.executionEnvironment === ExecutionEnvironment.StoreClient ||
+      Constants.appOwnership === 'expo');
+  const expoGoRedirectUri = makeRedirectUri({ path: 'oauth' });
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId: webClientId,
     iosClientId: iosClientId,
-    androidClientId: androidClientId,
+    androidClientId: androidClientId || webClientId,
     selectAccount: true,
   });
 
-  const canLogin = Boolean(request);
+  const canLogin = isExpoGo || Boolean(request);
+
+  const completeLogin = useCallback(async (body: AuthResponse) => {
+    isOAuthLoginRef.current = true;
+    await setSession({ token: body.token, profile: body.user });
+    console.log('Google Login Success:', body.user.email);
+    router.replace(body.user.userId ? '/home' : '/signup');
+  }, [router, setSession]);
 
   const loginWithBackend = useCallback((idToken: string) => {
     fetch(`${apiUrl}/auth/google`, {
@@ -59,17 +74,12 @@ export default function LoginScreen() {
         }
         return body as AuthResponse;
       })
-      .then(async (body) => {
-        isOAuthLoginRef.current = true;
-        await setSession({ token: body.token, profile: body.user });
-        console.log('Google Login Success:', body.user.email);
-        router.replace(body.user.userId ? '/home' : '/signup');
-      })
+      .then(completeLogin)
       .catch((error: Error) => {
         isOAuthLoginRef.current = false;
         console.error('Google Login Failed:', error.message);
       });
-  }, [router, setSession]);
+  }, [completeLogin]);
 
   useEffect(() => {
     if (response?.type === 'success') {
@@ -93,6 +103,27 @@ export default function LoginScreen() {
 
   const handleGoogleLogin = () => {
     if (!canLogin) return;
+
+    if (isExpoGo) {
+      const authURL = `${apiUrl}/auth/google/start?redirect_uri=${encodeURIComponent(expoGoRedirectUri)}`;
+      WebBrowser.openAuthSessionAsync(authURL, expoGoRedirectUri)
+        .then((result) => {
+          if (result.type !== 'success') return;
+          const parsed = Linking.parse(result.url);
+          const code = parsed.queryParams?.code;
+          const error = parsed.queryParams?.error;
+          const queryParams = typeof code === 'string'
+            ? { code }
+            : typeof error === 'string'
+              ? { error }
+              : undefined;
+          if (queryParams) router.replace({ pathname: './oauth', params: queryParams });
+        })
+        .catch((error: Error) => {
+          console.error('Google Login Failed:', error.message);
+        });
+      return;
+    }
 
     if (Platform.OS === 'web' && request?.url && typeof window !== 'undefined') {
       window.location.assign(request.url);
