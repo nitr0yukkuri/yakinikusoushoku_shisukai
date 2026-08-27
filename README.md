@@ -147,6 +147,22 @@ npm install
 npx expo start
 ```
 
+### 提出用ZIPについて
+
+提出用ZIPはファイルサイズを抑えるため、`node_modules` フォルダを含めていません。
+`node_modules` は依存パッケージから再生成できるため、ZIPを展開した後に以下を実行してください。
+
+```bash
+cd mobile
+npm install
+```
+
+インストール完了後、以下のコマンドでアプリを起動できます。
+
+```bash
+npx expo start
+```
+
 ---
 ### 5. なんかフロントエンドとかでバグったとき
 
