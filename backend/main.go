@@ -26,12 +26,6 @@ import (
 
 var upgrader = websocket.Upgrader{CheckOrigin: checkWebSocketOrigin}
 
-// ★追加：到着したユーザーを管理するためのインメモリマップとロック
-var (
-	arrivedUsersMap = make(map[int64]map[string]bool)
-	arrivedMu       sync.Mutex
-)
-
 type googleAuthRequest struct {
 	IDToken string `json:"idToken"`
 }
@@ -448,9 +442,9 @@ func main() {
 	http.HandleFunc("/ws/tickets", withCORS(handleWSTickets(pool, wsTickets)))
 
 	// ★追加：到着記録用エンドポイント
-	http.HandleFunc("/meetups/arrive", withCORS(handleMeetupArrive()))
+	http.HandleFunc("/meetups/arrive", withCORS(handleMeetupArrive(pool)))
 	// ★追加：到着状況取得用エンドポイント
-	http.HandleFunc("/meetups/arrive_status", withCORS(handleMeetupArriveStatus()))
+	http.HandleFunc("/meetups/arrive_status", withCORS(handleMeetupArriveStatus(pool)))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ticket, ok := wsTickets.consume(strings.TrimSpace(r.URL.Query().Get("ticket")))
@@ -514,51 +508,99 @@ func withCORS(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // ★追加：到着ボタンを押したときに呼ばれる関数
-func handleMeetupArrive() http.HandlerFunc {
+func handleMeetupArrive(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+		userNo, ok := authenticatedUserNo(w, r)
+		if !ok {
+			return
+		}
 		var req struct {
-			MeetupID int64  `json:"meetupId"`
-			UserID   string `json:"userId"`
+			MeetupID int64 `json:"meetupId"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "bad request")
 			return
 		}
-
-		arrivedMu.Lock()
-		if arrivedUsersMap[req.MeetupID] == nil {
-			arrivedUsersMap[req.MeetupID] = make(map[string]bool)
+		if req.MeetupID <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "valid meetupId is required")
+			return
 		}
-		arrivedUsersMap[req.MeetupID][req.UserID] = true
-		arrivedMu.Unlock()
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		if err := requireAcceptedMeetupMember(ctx, pool, userNo, req.MeetupID); err != nil {
+			writeJSONError(w, http.StatusForbidden, "meetup access denied")
+			return
+		}
+
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO meetup_arrivals (meetup_id, user_id)
+			VALUES ($1, $2)
+			ON CONFLICT (meetup_id, user_id) DO NOTHING
+		`, req.MeetupID, userNo); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to save arrival")
+			return
+		}
 
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	}
 }
 
 // ★追加：全員到着したかどうかを確認するための関数
-func handleMeetupArriveStatus() http.HandlerFunc {
+func handleMeetupArriveStatus(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		meetupIDStr := r.URL.Query().Get("meetupId")
-		meetupID, _ := strconv.ParseInt(meetupIDStr, 10, 64)
-
-		arrivedMu.Lock()
-		users := arrivedUsersMap[meetupID]
-		arrivedList := make([]string, 0)
-		for uid, arrived := range users {
-			if arrived {
-				arrivedList = append(arrivedList, uid)
-			}
+		userNo, ok := authenticatedUserNo(w, r)
+		if !ok {
+			return
 		}
-		arrivedMu.Unlock()
+		meetupIDStr := r.URL.Query().Get("meetupId")
+		meetupID, err := strconv.ParseInt(meetupIDStr, 10, 64)
+		if err != nil || meetupID <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "valid meetupId is required")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		if err := requireAcceptedMeetupMember(ctx, pool, userNo, meetupID); err != nil {
+			writeJSONError(w, http.StatusForbidden, "meetup access denied")
+			return
+		}
+		rows, err := pool.Query(ctx, `
+			SELECT COALESCE(u.user_id, '')
+			FROM meetup_arrivals ma
+			JOIN auth_users u ON u.id = ma.user_id
+			JOIN meetup_members mm ON mm.meetup_id = ma.meetup_id
+				AND mm.user_id = ma.user_id AND mm.status = 'accepted'
+			WHERE ma.meetup_id = $1 AND u.user_id IS NOT NULL
+			ORDER BY ma.arrived_at, u.user_id
+		`, meetupID)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to read arrival status")
+			return
+		}
+		defer rows.Close()
+		arrivedList := make([]string, 0)
+		for rows.Next() {
+			var userID string
+			if err := rows.Scan(&userID); err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "failed to read arrival status")
+				return
+			}
+			arrivedList = append(arrivedList, userID)
+		}
+		if err := rows.Err(); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to read arrival status")
+			return
+		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"arrivedUsers": arrivedList,
