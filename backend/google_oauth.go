@@ -28,14 +28,16 @@ const (
 )
 
 type googleOAuthState struct {
-	RedirectURL string `json:"redirectUrl"`
-	CallbackURL string `json:"callbackUrl"`
-	ExpiresAt   int64  `json:"expiresAt"`
-	Nonce       string `json:"nonce"`
+	RedirectURL   string `json:"redirectUrl"`
+	CallbackURL   string `json:"callbackUrl"`
+	ExpiresAt     int64  `json:"expiresAt"`
+	Nonce         string `json:"nonce"`
+	CodeChallenge string `json:"codeChallenge"`
 }
 
 type googleOAuthExchangeRequest struct {
-	Code string `json:"code"`
+	Code         string `json:"code"`
+	CodeVerifier string `json:"codeVerifier"`
 }
 
 type googleOAuthTokenResponse struct {
@@ -66,6 +68,15 @@ func handleGoogleOAuthStart() http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid OAuth redirect URI")
 			return
 		}
+		if strings.TrimSpace(r.URL.Query().Get("code_challenge_method")) != "S256" {
+			writeJSONError(w, http.StatusBadRequest, "S256 PKCE is required")
+			return
+		}
+		codeChallenge := strings.TrimSpace(r.URL.Query().Get("code_challenge"))
+		if !isValidPKCEValue(codeChallenge) {
+			writeJSONError(w, http.StatusBadRequest, "valid PKCE code challenge is required")
+			return
+		}
 
 		callbackURL := googleOAuthCallbackURL(r)
 		nonce, err := newGoogleOAuthNonce()
@@ -75,10 +86,11 @@ func handleGoogleOAuthStart() http.HandlerFunc {
 		}
 
 		state, err := signGoogleOAuthValue(googleOAuthState{
-			RedirectURL: redirectURL,
-			CallbackURL: callbackURL,
-			ExpiresAt:   time.Now().Add(googleOAuthStateTTL).Unix(),
-			Nonce:       nonce,
+			RedirectURL:   redirectURL,
+			CallbackURL:   callbackURL,
+			ExpiresAt:     time.Now().Add(googleOAuthStateTTL).Unix(),
+			Nonce:         nonce,
+			CodeChallenge: codeChallenge,
 		})
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "failed to create OAuth state")
@@ -130,6 +142,9 @@ func isAllowedGoogleOAuthReturnURL(raw string) bool {
 
 	switch strings.ToLower(parsed.Scheme) {
 	case "exp":
+		if strings.EqualFold(getEnv("ENV", "development"), "production") {
+			return false
+		}
 		return isAllowedExpoGoHost(parsed.Hostname()) && parsed.Path == "/--/oauth" && parsed.RawQuery == ""
 	case "matsunya":
 		return (parsed.Host == "oauth" && parsed.Path == "") ||
@@ -161,7 +176,8 @@ func handleGoogleOAuthCallback(pool *pgxpool.Pool) http.HandlerFunc {
 		var state googleOAuthState
 		stateValue := strings.TrimSpace(r.URL.Query().Get("state"))
 		if err := decodeGoogleOAuthValue(stateValue, &state); err != nil ||
-			state.ExpiresAt <= time.Now().Unix() || !isAllowedGoogleOAuthReturnURL(state.RedirectURL) {
+			state.ExpiresAt <= time.Now().Unix() || !isAllowedGoogleOAuthReturnURL(state.RedirectURL) ||
+			!isValidPKCEValue(state.CodeChallenge) {
 			http.Error(w, "invalid or expired OAuth state", http.StatusBadRequest)
 			return
 		}
@@ -226,7 +242,7 @@ func handleGoogleOAuthCallback(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		exchangeCode, err := issueGoogleOAuthCode(ctx, pool, user.ID)
+		exchangeCode, err := issueGoogleOAuthCode(ctx, pool, user.ID, state.CodeChallenge)
 		if err != nil {
 			log.Printf("google OAuth exchange code creation error: %v", err)
 			redirectGoogleOAuthResult(w, r, state.RedirectURL, url.Values{
@@ -312,10 +328,15 @@ func handleGoogleOAuthExchange(pool *pgxpool.Pool) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "code is required")
 			return
 		}
+		codeVerifier := strings.TrimSpace(req.CodeVerifier)
+		if !isValidPKCEValue(codeVerifier) {
+			writeJSONError(w, http.StatusBadRequest, "valid PKCE code verifier is required")
+			return
+		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		userNo, err := consumeGoogleOAuthCode(ctx, pool, code)
+		userNo, err := consumeGoogleOAuthCode(ctx, pool, code, codeVerifier)
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeJSONError(w, http.StatusUnauthorized, "invalid or expired OAuth code")
 			return
@@ -353,16 +374,18 @@ func ensureGoogleOAuthSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		CREATE TABLE IF NOT EXISTS google_oauth_codes (
 			code_hash TEXT PRIMARY KEY,
 			auth_user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+			code_challenge TEXT,
 			expires_at TIMESTAMPTZ NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		);
+		ALTER TABLE google_oauth_codes ADD COLUMN IF NOT EXISTS code_challenge TEXT;
 		CREATE INDEX IF NOT EXISTS idx_google_oauth_codes_expires_at
 			ON google_oauth_codes (expires_at);
 	`)
 	return err
 }
 
-func issueGoogleOAuthCode(ctx context.Context, pool *pgxpool.Pool, userNo int64) (string, error) {
+func issueGoogleOAuthCode(ctx context.Context, pool *pgxpool.Pool, userNo int64, codeChallenge string) (string, error) {
 	code, err := newGoogleOAuthNonce()
 	if err != nil {
 		return "", err
@@ -377,9 +400,9 @@ func issueGoogleOAuthCode(ctx context.Context, pool *pgxpool.Pool, userNo int64)
 		return "", err
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO google_oauth_codes (code_hash, auth_user_id, expires_at)
-		VALUES ($1, $2, $3)
-	`, codeHash, userNo, time.Now().Add(googleOAuthCodeTTL)); err != nil {
+		INSERT INTO google_oauth_codes (code_hash, auth_user_id, code_challenge, expires_at)
+		VALUES ($1, $2, $3, $4)
+	`, codeHash, userNo, codeChallenge, time.Now().Add(googleOAuthCodeTTL)); err != nil {
 		return "", err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -388,19 +411,37 @@ func issueGoogleOAuthCode(ctx context.Context, pool *pgxpool.Pool, userNo int64)
 	return code, nil
 }
 
-func consumeGoogleOAuthCode(ctx context.Context, pool *pgxpool.Pool, code string) (int64, error) {
+func consumeGoogleOAuthCode(ctx context.Context, pool *pgxpool.Pool, code, codeVerifier string) (int64, error) {
 	var userNo int64
 	err := pool.QueryRow(ctx, `
 		DELETE FROM google_oauth_codes
-		WHERE code_hash = $1 AND expires_at > now()
+		WHERE code_hash = $1 AND code_challenge = $2 AND expires_at > now()
 		RETURNING auth_user_id
-	`, hashGoogleOAuthCode(code)).Scan(&userNo)
+	`, hashGoogleOAuthCode(code), hashPKCEValue(codeVerifier)).Scan(&userNo)
 	return userNo, err
 }
 
 func hashGoogleOAuthCode(code string) string {
 	digest := sha256.Sum256([]byte(code))
 	return base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func hashPKCEValue(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func isValidPKCEValue(value string) bool {
+	if len(value) < 43 || len(value) > 128 {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') && r != '-' && r != '.' && r != '_' && r != '~' {
+			return false
+		}
+	}
+	return true
 }
 
 func newGoogleOAuthNonce() (string, error) {

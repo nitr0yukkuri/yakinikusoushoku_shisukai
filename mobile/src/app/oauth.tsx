@@ -1,5 +1,6 @@
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
@@ -13,6 +14,7 @@ type AuthResponse = {
 };
 
 const apiUrl = getApiUrl();
+const PKCE_VERIFIER_STORAGE_KEY = '@matsunya/google-oauth-pkce-verifier';
 
 const dismissAuthBrowser = async () => {
   try {
@@ -24,13 +26,18 @@ const dismissAuthBrowser = async () => {
 
 export default function OAuthCallbackScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ code?: string | string[]; error?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    code?: string | string[];
+    error?: string | string[];
+    verifier?: string | string[];
+  }>();
   const { setSession } = useProfile();
   const handledCodeRef = useRef<string | null>(null);
 
-  const handleResult = useCallback((codeValue: unknown, errorValue: unknown) => {
+  const handleResult = useCallback(async (codeValue: unknown, errorValue: unknown, verifierValue: unknown) => {
     const error = Array.isArray(errorValue) ? errorValue[0] : errorValue;
     if (typeof error === 'string') {
+      await AsyncStorage.removeItem(PKCE_VERIFIER_STORAGE_KEY);
       console.error('Google Login Failed:', error);
       void dismissAuthBrowser();
       router.replace('/');
@@ -40,40 +47,48 @@ export default function OAuthCallbackScreen() {
     if (typeof code !== 'string' || handledCodeRef.current === code) return;
     handledCodeRef.current = code;
 
-    fetch(`${apiUrl}/auth/google/exchange`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
-    })
-      .then(async (res) => {
-        const body = (await res.json()) as AuthResponse | { error?: string };
-        if (!res.ok) {
-          throw new Error('error' in body ? body.error : 'Googleログインに失敗しました');
-        }
-        return body as AuthResponse;
-      })
-      .then(async (body) => {
-        await dismissAuthBrowser();
-        await setSession({ token: body.token, profile: body.user });
-        router.replace(body.user.userId ? '/home' : '/signup');
-      })
-      .catch((error: Error) => {
-        handledCodeRef.current = null;
-        console.error('Google Login Failed:', error.message);
-        void dismissAuthBrowser();
-        router.replace('/');
+    const verifier = Array.isArray(verifierValue) ? verifierValue[0] : verifierValue;
+    try {
+      const storedVerifier = await AsyncStorage.getItem(PKCE_VERIFIER_STORAGE_KEY);
+      const resolvedVerifier = typeof verifier === 'string' && verifier.length >= 43
+        ? verifier
+        : storedVerifier;
+      await AsyncStorage.removeItem(PKCE_VERIFIER_STORAGE_KEY);
+
+      if (!resolvedVerifier || resolvedVerifier.length < 43) {
+        throw new Error('PKCE verifier is missing');
+      }
+
+      const res = await fetch(`${apiUrl}/auth/google/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, codeVerifier: resolvedVerifier }),
       });
+      const body = (await res.json()) as AuthResponse | { error?: string };
+      if (!res.ok) {
+        throw new Error('error' in body ? body.error : 'Googleログインに失敗しました');
+      }
+
+      await dismissAuthBrowser();
+      await setSession({ token: (body as AuthResponse).token, profile: (body as AuthResponse).user });
+      router.replace((body as AuthResponse).user.userId ? '/home' : '/signup');
+    } catch (error) {
+      handledCodeRef.current = null;
+      console.error('Google Login Failed:', (error as Error).message);
+      void dismissAuthBrowser();
+      router.replace('/');
+    }
   }, [router, setSession]);
 
   const handleURL = useCallback((url: string | null) => {
     if (!url) return;
     const parsed = Linking.parse(url);
-    handleResult(parsed.queryParams?.code, parsed.queryParams?.error);
+    void handleResult(parsed.queryParams?.code, parsed.queryParams?.error, parsed.queryParams?.verifier);
   }, [handleResult]);
 
   useEffect(() => {
-    handleResult(params.code, params.error);
-  }, [handleResult, params.code, params.error]);
+    void handleResult(params.code, params.error, params.verifier);
+  }, [handleResult, params.code, params.error, params.verifier]);
 
   useEffect(() => {
     let isMounted = true;

@@ -1,8 +1,10 @@
 import { makeRedirectUri } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
+import * as Crypto from 'expo-crypto';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { Platform, StyleSheet, View, Image, TouchableOpacity } from 'react-native';
@@ -23,6 +25,7 @@ const webClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
 const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
 const apiUrl = getApiUrl();
+const PKCE_VERIFIER_STORAGE_KEY = '@matsunya/google-oauth-pkce-verifier';
 
 const readWebIdTokenFromLocation = () => {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return '';
@@ -35,6 +38,21 @@ const readWebIdTokenFromLocation = () => {
   return params.get('id_token') ?? '';
 };
 
+const toBase64Url = (value: string) => value
+  .replace(/\+/g, '-')
+  .replace(/\//g, '_')
+  .replace(/=+$/, '');
+
+const createPKCEPair = async () => {
+  const verifier = `${Crypto.randomUUID()}${Crypto.randomUUID()}`.replace(/-/g, '');
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    verifier,
+    { encoding: Crypto.CryptoEncoding.BASE64 },
+  );
+  return { verifier, challenge: toBase64Url(digest) };
+};
+
 export default function LoginScreen() {
   const router = useRouter();
   const { profile, isHydrated, setSession } = useProfile();
@@ -43,7 +61,7 @@ export default function LoginScreen() {
     Platform.OS !== 'web' &&
     (Constants.executionEnvironment === ExecutionEnvironment.StoreClient ||
       Constants.appOwnership === 'expo');
-  const expoGoRedirectUri = makeRedirectUri({ path: 'oauth' });
+  const authRedirectUri = makeRedirectUri({ path: 'oauth' });
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId: webClientId,
@@ -101,27 +119,33 @@ export default function LoginScreen() {
     router.replace(profile.userId ? '/home' : '/signup');
   }, [isHydrated, profile, router]);
 
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     if (!canLogin) return;
 
-    if (isExpoGo) {
-      const authURL = `${apiUrl}/auth/google/start?redirect_uri=${encodeURIComponent(expoGoRedirectUri)}`;
-      WebBrowser.openAuthSessionAsync(authURL, expoGoRedirectUri)
-        .then((result) => {
-          if (result.type !== 'success') return;
-          const parsed = Linking.parse(result.url);
-          const code = parsed.queryParams?.code;
-          const error = parsed.queryParams?.error;
-          const queryParams = typeof code === 'string'
-            ? { code }
-            : typeof error === 'string'
-              ? { error }
-              : undefined;
-          if (queryParams) router.replace({ pathname: './oauth', params: queryParams });
-        })
-        .catch((error: Error) => {
-          console.error('Google Login Failed:', error.message);
-        });
+    if (isExpoGo || Platform.OS === 'android') {
+      try {
+        const { verifier, challenge } = await createPKCEPair();
+        await AsyncStorage.setItem(PKCE_VERIFIER_STORAGE_KEY, verifier);
+        const authURL = `${apiUrl}/auth/google/start?redirect_uri=${encodeURIComponent(authRedirectUri)}&code_challenge=${encodeURIComponent(challenge)}&code_challenge_method=S256`;
+        const result = await WebBrowser.openAuthSessionAsync(authURL, authRedirectUri);
+        if (result.type !== 'success') {
+          await AsyncStorage.removeItem(PKCE_VERIFIER_STORAGE_KEY);
+          return;
+        }
+        const parsed = Linking.parse(result.url);
+        const code = parsed.queryParams?.code;
+        const error = parsed.queryParams?.error;
+        const queryParams = typeof code === 'string'
+          ? { code, verifier }
+          : typeof error === 'string'
+            ? { error }
+            : undefined;
+        if (queryParams) router.replace({ pathname: './oauth', params: queryParams });
+        else await AsyncStorage.removeItem(PKCE_VERIFIER_STORAGE_KEY);
+      } catch (error) {
+        await AsyncStorage.removeItem(PKCE_VERIFIER_STORAGE_KEY);
+        console.error('Google Login Failed:', (error as Error).message);
+      }
       return;
     }
 

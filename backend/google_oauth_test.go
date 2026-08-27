@@ -13,10 +13,11 @@ func TestGoogleOAuthValueRoundTripAndTamperDetection(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")
 
 	original := googleOAuthState{
-		RedirectURL: "exp://10.0.0.2:8081/--/oauth",
-		CallbackURL: "https://example.com/auth/google/callback",
-		ExpiresAt:   time.Now().Add(time.Minute).Unix(),
-		Nonce:       "nonce",
+		RedirectURL:   "exp://10.0.0.2:8081/--/oauth",
+		CallbackURL:   "https://example.com/auth/google/callback",
+		ExpiresAt:     time.Now().Add(time.Minute).Unix(),
+		Nonce:         "nonce",
+		CodeChallenge: strings.Repeat("a", 43),
 	}
 	value, err := signGoogleOAuthValue(original)
 	if err != nil {
@@ -43,10 +44,11 @@ func TestGoogleOAuthValueRoundTripAndTamperDetection(t *testing.T) {
 func TestGoogleOAuthStateRequiresNonce(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")
 	value, err := signGoogleOAuthValue(googleOAuthState{
-		RedirectURL: "exp://10.0.0.2:8081/--/oauth",
-		CallbackURL: "https://example.com/auth/google/callback",
-		ExpiresAt:   time.Now().Add(time.Minute).Unix(),
-		Nonce:       "nonce",
+		RedirectURL:   "exp://10.0.0.2:8081/--/oauth",
+		CallbackURL:   "https://example.com/auth/google/callback",
+		ExpiresAt:     time.Now().Add(time.Minute).Unix(),
+		Nonce:         "nonce",
+		CodeChallenge: strings.Repeat("a", 43),
 	})
 	if err != nil {
 		t.Fatalf("signGoogleOAuthValue() error = %v", err)
@@ -86,13 +88,24 @@ func TestIsAllowedGoogleOAuthReturnURL(t *testing.T) {
 	}
 }
 
+func TestProductionRejectsExpoGoReturnURL(t *testing.T) {
+	t.Setenv("ENV", "production")
+	if isAllowedGoogleOAuthReturnURL("exp://192.168.1.20:8081/--/oauth") {
+		t.Fatal("production accepted an Expo Go return URL")
+	}
+	if !isAllowedGoogleOAuthReturnURL("matsunya://oauth") {
+		t.Fatal("production rejected the native app return URL")
+	}
+}
+
 func TestGoogleOAuthStartRedirectsToGoogle(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")
 	t.Setenv("GOOGLE_CLIENT_ID", "web-client-id.apps.googleusercontent.com")
 	t.Setenv("GOOGLE_CLIENT_SECRET", "client-secret")
 	t.Setenv("GOOGLE_OAUTH_REDIRECT_URI", "https://matsunya-backend.onrender.com/auth/google/callback")
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/google/start?redirect_uri="+url.QueryEscape("exp://192.168.1.20:8081/--/oauth"), nil)
+	challenge := strings.Repeat("a", 43)
+	req := httptest.NewRequest(http.MethodGet, "/auth/google/start?redirect_uri="+url.QueryEscape("exp://192.168.1.20:8081/--/oauth")+"&code_challenge="+challenge+"&code_challenge_method=S256", nil)
 	res := httptest.NewRecorder()
 	handleGoogleOAuthStart()(res, req)
 
@@ -115,6 +128,9 @@ func TestGoogleOAuthStartRedirectsToGoogle(t *testing.T) {
 	if query.Get("redirect_uri") != "https://matsunya-backend.onrender.com/auth/google/callback" {
 		t.Fatalf("redirect_uri = %q", query.Get("redirect_uri"))
 	}
+	if query.Get("code_challenge") != "" {
+		t.Fatal("provider request unexpectedly included the app handoff challenge")
+	}
 }
 
 func TestHashGoogleOAuthCodeIsDeterministicAndOpaque(t *testing.T) {
@@ -125,5 +141,21 @@ func TestHashGoogleOAuthCodeIsDeterministicAndOpaque(t *testing.T) {
 	}
 	if first == "test-oauth-code" || first == "" {
 		t.Fatalf("hashGoogleOAuthCode() = %q, want a non-empty hash", first)
+	}
+}
+
+func TestPKCEValueValidationAndHash(t *testing.T) {
+	verifier := strings.Repeat("a", 64)
+	if !isValidPKCEValue(verifier) {
+		t.Fatal("valid PKCE value was rejected")
+	}
+	if isValidPKCEValue("too-short") {
+		t.Fatal("short PKCE value was accepted")
+	}
+	if isValidPKCEValue(strings.Repeat("a", 129)) {
+		t.Fatal("long PKCE value was accepted")
+	}
+	if hashPKCEValue(verifier) == hashPKCEValue(strings.Repeat("b", 64)) {
+		t.Fatal("different PKCE values produced the same hash")
 	}
 }
