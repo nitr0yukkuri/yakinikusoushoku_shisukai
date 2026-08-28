@@ -131,32 +131,38 @@ export function useMeetupSession(token: string | null, userId?: string) {
     });
   }, [activeMeetupId]);
 
+  const fetchMeetupMembers = useCallback(async (meetupId: number) => {
+    const response = await fetch(`${apiUrl}/meetups/${meetupId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || '待ち合わせを取得できませんでした');
+    return body.meetup?.members || [];
+  }, [token]);
+
   useEffect(() => {
     if (!token || !activeMeetupId) return;
     let cancelled = false;
-    fetch(`${apiUrl}/meetups/${activeMeetupId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error || '待ち合わせを取得できませんでした');
-        return body.meetup;
-      })
-      .then((meetup) => {
-        if (cancelled) return;
-        setActiveMeetupMembers({
-          meetupId: activeMeetupId,
-          loaded: true,
-          members: meetup.members || [],
+    const refreshMembers = () => {
+      fetchMeetupMembers(activeMeetupId)
+        .then((members) => {
+          if (cancelled) return;
+          setActiveMeetupMembers({ meetupId: activeMeetupId, loaded: true, members });
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setActiveMeetupMembers({ meetupId: activeMeetupId, loaded: false, members: [] });
+          console.warn('Failed to load meetup members:', error);
         });
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setActiveMeetupMembers({ meetupId: activeMeetupId, loaded: false, members: [] });
-        console.warn('Failed to load meetup members:', error);
-      });
-    return () => { cancelled = true; };
-  }, [activeMeetupId, token]);
+    };
+
+    refreshMembers();
+    const timer = setInterval(refreshMembers, etaRefreshInterval);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [activeMeetupId, fetchMeetupMembers, token]);
 
   useEffect(() => {
     lastETAUpdateRef.current = 0;
@@ -384,7 +390,15 @@ export function useMeetupSession(token: string | null, userId?: string) {
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || '招待を更新できませんでした');
     await refreshMeetups();
-  }, [refreshMeetups, token]);
+    if (action === 'accept') {
+      try {
+        const members = await fetchMeetupMembers(meetupId);
+        setActiveMeetupMembers({ meetupId, loaded: true, members });
+      } catch (error) {
+        console.warn('Failed to refresh meetup members after invite response:', error);
+      }
+    }
+  }, [fetchMeetupMembers, refreshMeetups, token]);
 
   // ★追加：到着したことをサーバーに知らせる関数
   const sendArrival = useCallback(async () => {

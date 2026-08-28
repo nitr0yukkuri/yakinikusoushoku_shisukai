@@ -16,3 +16,4 @@ migrate:
 	psql "$${DATABASE_URL}" -f migrations/0004_notifications.sql
 	psql "$${DATABASE_URL}" -f migrations/0005_arrival_estimate_routes.sql
 	psql "$${DATABASE_URL}" -f migrations/0006_google_oauth_codes.sql
+	psql "$${DATABASE_URL}" -f migrations/0007_meetup_arrivals.sql

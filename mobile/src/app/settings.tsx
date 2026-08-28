@@ -107,10 +107,10 @@ export default function SettingsScreen() {
                 <Text style={styles.emailText} numberOfLines={1}>{profile?.email || ''}</Text>
               </View>
 
-              <Text style={styles.deleteTitle}>アカウントを削除</Text>
+              <Text style={styles.deleteTitle}>ログアウト</Text>
               <TouchableOpacity style={styles.deleteButton} onPress={handleLogout}>
-                <Ionicons name="trash-outline" size={18} color="#b71c1c" />
-                <Text style={styles.deleteButtonText}>削除する</Text>
+                <Ionicons name="log-out-outline" size={18} color="#b71c1c" />
+                <Text style={styles.deleteButtonText}>ログアウト</Text>
               </TouchableOpacity>
             </View>
           </Popup>
