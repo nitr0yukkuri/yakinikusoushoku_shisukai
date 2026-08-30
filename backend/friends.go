@@ -15,16 +15,25 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const friendProfileColumns = `
-	COALESCE(u.user_id, ''),
-	COALESCE(u.name, ''),
+const friendProfileImageColumn = `
 	COALESCE(NULLIF(u.profile_image, ''), NULLIF(u.picture_url, ''), '')
 `
+
+func friendProfileColumns(includeProfileImage bool) string {
+	imageColumn := "CAST('' AS TEXT)"
+	if includeProfileImage {
+		imageColumn = friendProfileImageColumn
+	}
+	return `
+	COALESCE(u.user_id, ''),
+	COALESCE(u.name, ''),
+	` + imageColumn
+}
 
 type friendProfile struct {
 	UserID       string `json:"userId"`
 	Name         string `json:"name"`
-	ProfileImage string `json:"profileImage"`
+	ProfileImage string `json:"profileImage,omitempty"`
 }
 
 type friendSearchResult struct {
@@ -109,9 +118,10 @@ func handleFriends(pool *pgxpool.Pool) http.HandlerFunc {
 func listFriends(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	includeProfileImages := r.URL.Query().Get("includeProfileImages") != "false"
 
 	rows, err := pool.Query(ctx, `
-		SELECT `+friendProfileColumns+`
+		SELECT `+friendProfileColumns(includeProfileImages)+`
 		FROM friendships f
 		JOIN auth_users u ON u.id = CASE
 			WHEN f.user_low_id = $1 THEN f.user_high_id
@@ -196,7 +206,7 @@ func handleFriendSearch(pool *pgxpool.Pool) http.HandlerFunc {
 
 		var result friendSearchResult
 		err := pool.QueryRow(ctx, `
-			SELECT `+friendProfileColumns+`,
+			SELECT `+friendProfileColumns(true)+`,
 				CASE
 					WHEN u.id = $2 THEN 'self'
 					WHEN EXISTS (
@@ -260,13 +270,14 @@ func handleFriendRequests(pool *pgxpool.Pool) http.HandlerFunc {
 func listFriendRequests(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	includeProfileImages := r.URL.Query().Get("includeProfileImages") != "false"
 
-	incoming, err := queryFriendRequests(ctx, pool, userNo, true)
+	incoming, err := queryFriendRequests(ctx, pool, userNo, true, includeProfileImages)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to read friend requests")
 		return
 	}
-	outgoing, err := queryFriendRequests(ctx, pool, userNo, false)
+	outgoing, err := queryFriendRequests(ctx, pool, userNo, false, includeProfileImages)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "failed to read friend requests")
 		return
@@ -278,7 +289,7 @@ func listFriendRequests(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 	})
 }
 
-func queryFriendRequests(ctx context.Context, pool *pgxpool.Pool, userNo int64, incoming bool) ([]friendRequestProfile, error) {
+func queryFriendRequests(ctx context.Context, pool *pgxpool.Pool, userNo int64, incoming, includeProfileImage bool) ([]friendRequestProfile, error) {
 	ownerColumn := "fr.requester_id"
 	profileColumn := "fr.addressee_id"
 	if incoming {
@@ -287,7 +298,7 @@ func queryFriendRequests(ctx context.Context, pool *pgxpool.Pool, userNo int64, 
 	}
 
 	rows, err := pool.Query(ctx, `
-		SELECT fr.id, `+friendProfileColumns+`, fr.created_at
+		SELECT fr.id, `+friendProfileColumns(includeProfileImage)+`, fr.created_at
 		FROM friend_requests fr
 		JOIN auth_users u ON u.id = `+profileColumn+`
 		WHERE `+ownerColumn+` = $1 AND fr.status = 'pending'
@@ -316,6 +327,9 @@ func queryFriendRequests(ctx context.Context, pool *pgxpool.Pool, userNo int64, 
 }
 
 func createFriendRequestHandler(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {
+	if rejectRateLimited(w, userRateLimitKey(userNo, "friend-request-create"), 30, time.Minute) {
+		return
+	}
 	var req createFriendRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid json body")
@@ -441,6 +455,9 @@ func createFriendRequestHandler(w http.ResponseWriter, r *http.Request, pool *pg
 }
 
 func updateFriendRequestHandler(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {
+	if rejectRateLimited(w, userRateLimitKey(userNo, "friend-request-update"), 60, time.Minute) {
+		return
+	}
 	var req updateFriendRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid json body")

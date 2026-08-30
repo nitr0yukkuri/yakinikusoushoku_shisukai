@@ -16,3 +16,14 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 *.zip
+.eas-staging/
+.git/
+.gradle-home/
+.npm-cache/
+.codex/
+.codex-tmp/
+.codex-work/
+.gocache/
+.gocache-review/
+backend/
+outputs/

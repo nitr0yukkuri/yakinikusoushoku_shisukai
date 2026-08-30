@@ -99,6 +99,9 @@ func handleSpots(pool *pgxpool.Pool) http.HandlerFunc {
 		if _, ok := authenticatedUserNo(w, r); !ok {
 			return
 		}
+		if rejectRateLimited(w, clientRateLimitKey(r, "places"), 120, time.Minute) {
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
 		switch {

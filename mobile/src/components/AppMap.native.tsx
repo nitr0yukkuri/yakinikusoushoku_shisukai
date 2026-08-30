@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { StyleProp, StyleSheet, ViewStyle, ActivityIndicator, View, Alert } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { StyleProp, StyleSheet, ViewStyle, ActivityIndicator, View, Alert, Platform } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Region, Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -8,6 +8,7 @@ import { getApiUrl, getWebSocketUrl } from '../utils/api-url';
 
 const WS_URL = getWebSocketUrl();
 const API_URL = getApiUrl();
+const demoLocationEditingEnabled = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
 
 const INITIAL_REGION: Region = {
   latitude: 35.681236,
@@ -106,10 +107,12 @@ export const AppMap = ({
 
   const [locations, setLocations] = useState<Record<string, UserLocation>>({});
   const [myLocation, setMyLocation] = useState<Location.LocationObject | null>(null);
+  const [isManualLocationMode, setIsManualLocationMode] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const mapRef = useRef<MapView | null>(null);
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
+  const manualLocationModeRef = useRef(false);
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
   const hasCenteredOnCurrentLocationRef = useRef(false);
   const onCurrentLocationChangeRef = useRef(onCurrentLocationChange);
@@ -118,6 +121,36 @@ export const AppMap = ({
     () => (routePolyline ? decodePolyline(routePolyline) : []),
     [routePolyline],
   );
+
+  const publishManualPosition = useCallback((coordinate: { latitude: number; longitude: number }) => {
+    const timestamp = Date.now();
+    currentPositionRef.current = {
+      lat: coordinate.latitude,
+      lng: coordinate.longitude,
+    };
+    setMyLocation((current) => current ? {
+      ...current,
+      coords: {
+        ...current.coords,
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+      },
+      timestamp,
+    } : current);
+    onCurrentLocationChangeRef.current?.(coordinate, { forceETARefresh: true });
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'LOCATION_UPDATE',
+        userId,
+        userName: profileRef.current.userName,
+        profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
+        lat: coordinate.latitude,
+        lng: coordinate.longitude,
+        timestamp,
+      }));
+    }
+  }, [userId]);
 
   useEffect(() => {
     onCurrentLocationChangeRef.current = onCurrentLocationChange;
@@ -245,10 +278,41 @@ export const AppMap = ({
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
+    let isMounted = true;
 
-    (async () => {
+    const applyLocation = (location: Location.LocationObject, shareLocation: boolean) => {
+      if (!isMounted) return;
+      if (demoLocationEditingEnabled && manualLocationModeRef.current) return;
+
+      setMyLocation(location);
+      if (!shareLocation) return;
+
+      currentPositionRef.current = {
+        lat: location.coords.latitude,
+        lng: location.coords.longitude,
+      };
+      onCurrentLocationChangeRef.current?.({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'LOCATION_UPDATE',
+          userId,
+          userName: profileRef.current.userName,
+          profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
+          lat: location.coords.latitude,
+          lng: location.coords.longitude,
+          timestamp: location.timestamp,
+        }));
+      }
+    };
+
+    const startLocationTracking = async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!isMounted) return;
         if (status !== 'granted') {
           Alert.alert(
             "位置情報がオフになっています",
@@ -259,62 +323,66 @@ export const AppMap = ({
           return;
         }
 
-        const initialLocation = await Promise.race([
-          Location.getCurrentPositionAsync({}),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
-        ]);
-        setMyLocation(initialLocation);
-        currentPositionRef.current = {
-          lat: initialLocation.coords.latitude,
-          lng: initialLocation.coords.longitude,
-        };
-        onCurrentLocationChangeRef.current?.({
-          latitude: initialLocation.coords.latitude,
-          longitude: initialLocation.coords.longitude,
-        });
-      } catch (error) {
-        console.warn('Location fetch timed out or failed:', error);
-      } finally {
-        setIsInitialized(true);
-      }
+        if (Platform.OS === 'android') {
+          try {
+            await Location.enableNetworkProviderAsync();
+          } catch (error) {
+            console.warn('High-accuracy location provider was not enabled:', error);
+          }
+        }
 
-      try {
-        locationSubscription = await Location.watchPositionAsync(
+        try {
+          const lastKnownLocation = await Location.getLastKnownPositionAsync({
+            maxAge: 120000,
+            requiredAccuracy: 100,
+          });
+          if (lastKnownLocation) {
+            // Use the cached position for a quick map center, but do not share it as current.
+            applyLocation(lastKnownLocation, false);
+          }
+        } catch (error) {
+          console.warn('Last known location is unavailable:', error);
+        }
+        setIsInitialized(true);
+
+        void Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
+            mayShowUserSettingsDialog: true,
             distanceInterval: 10,
             timeInterval: 5000,
           },
-          (location) => {
-            setMyLocation(location);
-            currentPositionRef.current = {
-              lat: location.coords.latitude,
-              lng: location.coords.longitude,
-            };
-            onCurrentLocationChangeRef.current?.({
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-            });
-
-            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({
-                type: 'LOCATION_UPDATE',
-                userId: userId,
-                userName: profileRef.current.userName,
-                profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
-                lat: location.coords.latitude,
-                lng: location.coords.longitude,
-                timestamp: location.timestamp,
-              }));
-            }
+          (location) => applyLocation(location, true),
+          (error) => console.warn('Location watch error:', error),
+        ).then((subscription) => {
+          if (!isMounted) {
+            subscription.remove();
+            return;
           }
-        );
+          locationSubscription = subscription;
+        }).catch((error) => {
+          console.warn('Failed to start watching position:', error);
+        });
+
+        try {
+          const currentLocation = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+            mayShowUserSettingsDialog: true,
+          });
+          applyLocation(currentLocation, true);
+        } catch (error) {
+          console.warn('Current location fetch failed:', error);
+        }
       } catch (error) {
-        console.warn('Failed to start watching position:', error);
+        console.warn('Location setup failed:', error);
+        if (isMounted) setIsInitialized(true);
       }
-    })();
+    };
+
+    void startLocationTracking();
 
     return () => {
+      isMounted = false;
       if (locationSubscription) {
         locationSubscription.remove();
       }
@@ -418,16 +486,28 @@ export const AppMap = ({
             longitude: myLocation.coords.longitude,
           }}
           title={userName}
+          draggable={demoLocationEditingEnabled && isManualLocationMode}
+          onPress={() => {
+            if (!demoLocationEditingEnabled) return;
+            manualLocationModeRef.current = true;
+            setIsManualLocationMode(true);
+          }}
+          onDragEnd={(event) => {
+            const { latitude, longitude } = event.nativeEvent.coordinate;
+            publishManualPosition({ latitude, longitude });
+          }}
           tracksViewChanges={Boolean(profileImage)}
         >
           <View style={[styles.markerBorder, styles.currentMarkerBorder]}>
-            <ProfileAvatar
-              key={selfMarkerImageKey}
-              name={userName}
-              profileImage={profileImage}
-              size={34}
-              style={styles.avatar}
-            />
+            <View style={styles.currentAvatarClip}>
+              <ProfileAvatar
+                key={selfMarkerImageKey}
+                name={userName}
+                profileImage={profileImage}
+                size={32}
+                style={styles.currentAvatar}
+              />
+            </View>
           </View>
         </Marker>
       )}
@@ -508,6 +588,20 @@ const styles = StyleSheet.create({
   currentMarkerBorder: {
     borderWidth: 2,
     borderColor: '#000000',
+  },
+  currentAvatarClip: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#000000',
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  currentAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
   },
   avatar: {
     width: 34,

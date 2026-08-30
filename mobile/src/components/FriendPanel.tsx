@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -13,6 +13,12 @@ type SearchResult = { profile: Friend; relationship: 'self' | 'friends' | 'outgo
 type FriendRequest = { id: number; user: Friend; createdAt: string };
 
 const apiUrl = getApiUrl();
+const friendRefreshInterval = 15000;
+
+const mergeCachedProfileImage = (profile: Friend, cache: Record<string, string>): Friend => {
+  if (profile.profileImage) cache[profile.userId] = profile.profileImage;
+  return { ...profile, profileImage: profile.profileImage || cache[profile.userId] || '' };
+};
 
 // ==========================================
 // ① メインのフレンド一覧コンポーネント
@@ -30,21 +36,33 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
   const [incoming, setIncoming] = useState<FriendRequest[]>([]);
   const [loadedFriendsForToken, setLoadedFriendsForToken] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const profileImagesRef = useRef<Record<string, string>>({});
+  const hasLoadedProfileImagesRef = useRef(false);
   const isLoadingFriends = Boolean(token) && loadedFriendsForToken !== token;
+
+  useEffect(() => {
+    profileImagesRef.current = {};
+    hasLoadedProfileImagesRef.current = false;
+  }, [token]);
 
   const loadFriends = useCallback(async () => {
     if (!token) return;
     const headers = { Authorization: `Bearer ${token}` };
+    const query = hasLoadedProfileImagesRef.current ? '?includeProfileImages=false' : '';
     const [friendsResponse, requestsResponse] = await Promise.all([
-      fetch(`${apiUrl}/friends`, { headers }),
-      fetch(`${apiUrl}/friends/requests`, { headers }),
+      fetch(`${apiUrl}/friends${query}`, { headers }),
+      fetch(`${apiUrl}/friends/requests${query}`, { headers }),
     ]);
     const friendsBody = await friendsResponse.json();
     const requestsBody = await requestsResponse.json();
     if (!friendsResponse.ok) throw new Error(friendsBody.error || 'フレンドを取得できませんでした');
     if (!requestsResponse.ok) throw new Error(requestsBody.error || '申請を取得できませんでした');
-    setFriends(friendsBody.friends || []);
-    setIncoming(requestsBody.incoming || []);
+    setFriends((friendsBody.friends || []).map((friend: Friend) => mergeCachedProfileImage(friend, profileImagesRef.current)));
+    setIncoming((requestsBody.incoming || []).map((request: FriendRequest) => ({
+      ...request,
+      user: mergeCachedProfileImage(request.user, profileImagesRef.current),
+    })));
+    hasLoadedProfileImagesRef.current = true;
     setMessage('');
   }, [token]);
 
@@ -61,7 +79,7 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
         console.warn('Friend refresh failed:', error);
       } finally {
         if (!cancelled) setLoadedFriendsForToken(token ?? null);
-        if (!cancelled) refreshTimer = setTimeout(refreshFriends, 3000);
+        if (!cancelled) refreshTimer = setTimeout(refreshFriends, friendRefreshInterval);
       }
     };
 
@@ -282,17 +300,29 @@ export const FriendRequestsPanel: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadedRequestsForToken, setLoadedRequestsForToken] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const profileImagesRef = useRef<Record<string, string>>({});
+  const hasLoadedProfileImagesRef = useRef(false);
   const isLoadingRequests = Boolean(token) && loadedRequestsForToken !== token;
+
+  useEffect(() => {
+    profileImagesRef.current = {};
+    hasLoadedProfileImagesRef.current = false;
+  }, [token]);
 
   const loadRequests = useCallback(async (showError = true) => {
     if (!token) return;
     try {
-      const response = await fetch(`${apiUrl}/friends/requests`, {
+      const query = hasLoadedProfileImagesRef.current ? '?includeProfileImages=false' : '';
+      const response = await fetch(`${apiUrl}/friends/requests${query}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || '申請を取得できませんでした');
-      setIncoming(body.incoming || []);
+      setIncoming((body.incoming || []).map((request: FriendRequest) => ({
+        ...request,
+        user: mergeCachedProfileImage(request.user, profileImagesRef.current),
+      })));
+      hasLoadedProfileImagesRef.current = true;
       setMessage('');
     } catch (error) {
       if (showError) {
@@ -313,7 +343,7 @@ export const FriendRequestsPanel: React.FC = () => {
       try {
         await loadRequests(false);
       } finally {
-        if (!cancelled) refreshTimer = setTimeout(refreshRequests, 3000);
+        if (!cancelled) refreshTimer = setTimeout(refreshRequests, friendRefreshInterval);
       }
     };
 

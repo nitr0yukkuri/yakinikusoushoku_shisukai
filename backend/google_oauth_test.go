@@ -32,9 +32,9 @@ func TestGoogleOAuthValueRoundTripAndTamperDetection(t *testing.T) {
 		t.Fatalf("decoded state = %#v, want %#v", decoded, original)
 	}
 
-	tampered := value[:len(value)-1] + "x"
+	tampered := "x" + value[1:]
 	if tampered == value {
-		tampered = value[:len(value)-1] + "y"
+		tampered = "y" + value[1:]
 	}
 	if err := decodeGoogleOAuthValue(tampered, &decoded); err == nil {
 		t.Fatal("decodeGoogleOAuthValue() accepted a tampered value")

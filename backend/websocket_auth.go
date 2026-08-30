@@ -81,6 +81,9 @@ func handleWSTickets(pool *pgxpool.Pool, store *wsTicketStore) http.HandlerFunc 
 		if !ok {
 			return
 		}
+		if rejectRateLimited(w, userRateLimitKey(userNo, "ws-ticket"), 30, time.Minute) {
+			return
+		}
 		var req createWSTicketRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.MeetupID <= 0 {
 			writeJSONError(w, http.StatusBadRequest, "valid meetupId is required")
@@ -89,7 +92,7 @@ func handleWSTickets(pool *pgxpool.Pool, store *wsTicketStore) http.HandlerFunc 
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		if err := requireAcceptedMeetupMember(ctx, pool, userNo, req.MeetupID); err != nil {
+		if err := requireLiveMeetupMember(ctx, pool, userNo, req.MeetupID); err != nil {
 			writeJSONError(w, http.StatusForbidden, "meetup access denied")
 			return
 		}

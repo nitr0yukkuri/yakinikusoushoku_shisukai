@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   SafeAreaView,
   Image,
   Alert, // ★追加
+  Platform,
+  StatusBar,
 } from 'react-native';
 
 import { AppMap } from '../components/AppMap';
@@ -53,6 +55,13 @@ const distanceInMeters = (origin: MapCoordinate, destination: MapCoordinate) => 
 
 export default function HomeScreen() {
   const { profile, avatarUrl, token } = useProfile();
+  const [isPopupVisible, setPopupVisible] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   
   // ★追加：allArrived, arrivedUsers, sendArrival を受け取る
   const {
@@ -79,9 +88,8 @@ export default function HomeScreen() {
     refresh: refreshNotifications,
     respondToFriendRequest,
     unreadCount,
-  } = useNotifications(token);
+  } = useNotifications(token, isPopupVisible);
 
-  const [isPopupVisible, setPopupVisible] = useState(false);
   const [isProfilePopupVisible, setProfilePopupVisible] = useState(false);
   const [isSettingsVisible, setSettingsVisible] = useState(false);
   const [isSystemVisible, setSystemVisible] = useState(false);
@@ -139,6 +147,13 @@ export default function HomeScreen() {
     || isFriendRequestsVisible;
   const shouldShowArriveButton = (() => {
     if (!activeMeetup || isAnyPopupVisible || arrivedUsers.includes(profile?.userId || '')) {
+      return false;
+    }
+    const scheduledAt = new Date(activeMeetup.scheduledAt).getTime();
+    const now = currentTime;
+    if (!Number.isFinite(scheduledAt)
+      || now < scheduledAt - 30 * 60 * 1000
+      || now > scheduledAt + 2 * 60 * 60 * 1000) {
       return false;
     }
     if (!activeMeetupLocation || !currentLocation) {
@@ -560,7 +575,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 5,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 5 : 5,
   },
   logoImage: {
     width: 260,

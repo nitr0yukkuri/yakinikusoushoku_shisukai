@@ -430,6 +430,7 @@ export default function MeetupSettingForm({ onSave, onDelete, selectedDate, exis
           <Text style={styles.meetupDeleteButtonText}>{isDeleting ? '削除中...' : 'この予定を削除'}</Text>
         </TouchableOpacity>
       ) : null}
+      <View style={styles.bottomScrollSpacer} />
     </View>
   );
 }
@@ -548,4 +549,5 @@ const styles = StyleSheet.create({
   meetupDeleteButton: { borderWidth: 1, borderColor: '#c84a4a', paddingVertical: 11, borderRadius: 25, alignItems: 'center', marginTop: 12 },
   meetupDeleteButtonText: { color: '#a72d2d', fontSize: 15, fontWeight: '700' },
   errorText: { color: '#b3261e', fontSize: 13, marginTop: 8 },
+  bottomScrollSpacer: { height: 240, width: '100%' },
 });

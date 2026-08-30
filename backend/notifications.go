@@ -89,6 +89,10 @@ func handleNotifications(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		switch r.Method {
 		case http.MethodGet:
+			if r.URL.Query().Get("summary") == "true" {
+				listNotificationSummary(w, r, pool, userNo)
+				return
+			}
 			listNotifications(w, r, pool, userNo)
 		case http.MethodPut:
 			markNotificationsRead(w, r, pool, userNo)
@@ -101,9 +105,13 @@ func handleNotifications(pool *pgxpool.Pool) http.HandlerFunc {
 func listNotifications(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	actorProfileImageColumn := "CAST('' AS TEXT)"
+	if r.URL.Query().Get("includeProfileImages") != "false" {
+		actorProfileImageColumn = friendProfileImageColumn
+	}
 	rows, err := pool.Query(ctx, `
 		SELECT n.id, n.type, COALESCE(u.user_id, ''), COALESCE(u.name, ''),
-			COALESCE(NULLIF(u.profile_image, ''), NULLIF(u.picture_url, ''), ''),
+			`+actorProfileImageColumn+`,
 			n.friend_request_id, COALESCE(fr.status, ''),
 			n.meetup_id, COALESCE(m.place_name, ''), m.scheduled_at,
 			COALESCE(mm.status, ''), n.read_at IS NOT NULL, n.created_at
@@ -146,6 +154,20 @@ func listNotifications(w http.ResponseWriter, r *http.Request, pool *pgxpool.Poo
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"notifications": items, "unreadCount": unreadCount})
+}
+
+func listNotificationSummary(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	var unreadCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM user_notifications
+		WHERE user_id = $1 AND read_at IS NULL
+	`, userNo).Scan(&unreadCount); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to read notification summary")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"unreadCount": unreadCount})
 }
 
 func markNotificationsRead(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {

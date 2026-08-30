@@ -215,7 +215,7 @@ const loadGoogleMapsScript = () => {
 
     const script = document.createElement('script');
     script.id = GOOGLE_MAPS_SCRIPT_ID;
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&language=ja&region=JP`;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
