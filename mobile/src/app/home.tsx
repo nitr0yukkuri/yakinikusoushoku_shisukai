@@ -153,7 +153,7 @@ export default function HomeScreen() {
     const now = currentTime;
     if (!Number.isFinite(scheduledAt)
       || now < scheduledAt - 30 * 60 * 1000
-      || now > scheduledAt + 2 * 60 * 60 * 1000) {
+      || now > scheduledAt + 30 * 60 * 1000) {
       return false;
     }
     if (!activeMeetupLocation || !currentLocation) {
