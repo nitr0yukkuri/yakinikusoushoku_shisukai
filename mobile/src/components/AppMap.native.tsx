@@ -498,16 +498,15 @@ export const AppMap = ({
           }}
           tracksViewChanges={Boolean(profileImage)}
         >
-          <View style={[styles.markerBorder, styles.currentMarkerBorder]}>
-            <View style={styles.currentAvatarClip}>
-              <ProfileAvatar
-                key={selfMarkerImageKey}
-                name={userName}
-                profileImage={profileImage}
-                size={32}
-                style={styles.currentAvatar}
-              />
-            </View>
+          <View style={styles.markerBorder}>
+            <ProfileAvatar
+              key={selfMarkerImageKey}
+              name={userName}
+              profileImage={profileImage}
+              size={34}
+              style={styles.avatar}
+              resizeMode="contain"
+            />
           </View>
         </Marker>
       )}
@@ -530,6 +529,7 @@ export const AppMap = ({
                 profileImage={loc.profileImage}
                 size={34}
                 style={styles.avatar}
+                resizeMode="contain"
               />
             </View>
           </Marker>
@@ -584,24 +584,6 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
     overflow: 'hidden',
-  },
-  currentMarkerBorder: {
-    borderWidth: 2,
-    borderColor: '#000000',
-  },
-  currentAvatarClip: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
-    borderColor: '#000000',
-    backgroundColor: '#FFFFFF',
-    overflow: 'hidden',
-  },
-  currentAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
   },
   avatar: {
     width: 34,

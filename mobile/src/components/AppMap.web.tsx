@@ -149,7 +149,7 @@ const circularMarkerUrl = (name: string, profileImage?: string, size = 48, ringC
         context.arc(size / 2, size / 2, diameter / 2, 0, Math.PI * 2);
         context.clip();
 
-        const scale = Math.max(diameter / image.width, diameter / image.height);
+        const scale = Math.min(diameter / image.width, diameter / image.height);
         const width = image.width * scale;
         const height = image.height * scale;
         const x = inset + (diameter - width) / 2;
