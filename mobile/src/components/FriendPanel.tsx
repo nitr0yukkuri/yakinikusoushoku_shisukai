@@ -147,23 +147,31 @@ export const FriendPanel: React.FC<FriendPanelProps> = ({ onOpenSearch, onOpenQR
 export const FriendSearchPanel: React.FC = () => {
   const { token } = useProfile();
   const [searchId, setSearchId] = useState('');
-  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
 
   const searchUser = async () => {
-    if (!token || !searchId.trim()) return;
+    const query = searchId.trim();
+    if (!token || !query) {
+      setSearchResults([]);
+      return;
+    }
     setIsLoading(true);
     setMessage('');
-    setSearchResult(null);
+    setSearchResults([]);
     try {
-      const response = await fetch(`${apiUrl}/friends/search?userId=${encodeURIComponent(searchId.trim())}`, {
+      const response = await fetch(`${apiUrl}/friends/search?userId=${encodeURIComponent(query)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const body = await response.json();
       if (response.status === 404) throw new Error('そのユーザーはいません');
       if (!response.ok) throw new Error(body.error || 'ユーザーが見つかりませんでした');
-      setSearchResult(body);
+      const results = Array.isArray(body.results)
+        ? body.results as SearchResult[]
+        : body.profile ? [body as SearchResult] : [];
+      setSearchResults(results);
+      if (results.length === 0) setMessage('そのユーザーはいません');
     } catch (error) {
       setMessage(toUserErrorMessage(error, '検索できませんでした'));
     } finally {
@@ -171,19 +179,21 @@ export const FriendSearchPanel: React.FC = () => {
     }
   };
 
-  const sendRequest = async () => {
-    if (!token || !searchResult) return;
+  const sendRequest = async (result: SearchResult) => {
+    if (!token) return;
     setIsLoading(true);
     setMessage('');
     try {
       const response = await fetch(`${apiUrl}/friends/requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId: searchResult.profile.userId }),
+        body: JSON.stringify({ userId: result.profile.userId }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || '申請を送信できませんでした');
-      setSearchResult({ ...searchResult, relationship: 'outgoing_pending' });
+      setSearchResults((current) => current.map((item) => item.profile.userId === result.profile.userId
+        ? { ...item, relationship: 'outgoing_pending' }
+        : item));
       setMessage('フレンド申請を送信しました');
     } catch (error) {
       setMessage(toUserErrorMessage(error, '申請を送信できませんでした'));
@@ -192,8 +202,16 @@ export const FriendSearchPanel: React.FC = () => {
     }
   };
 
-  const requestLabel = searchResult?.relationship === 'none' ? '申請' : searchResult?.relationship === 'friends'
-    ? 'フレンド' : searchResult?.relationship === 'self' ? '自分' : '申請中';
+  const handleSearchIdChange = (value: string) => {
+    setSearchId(value);
+    if (!value.trim()) {
+      setSearchResults([]);
+      setMessage('');
+    }
+  };
+
+  const requestLabel = (relationship: SearchResult['relationship']) => relationship === 'none' ? '申請'
+    : relationship === 'friends' ? 'フレンド' : relationship === 'self' ? '自分' : '申請中';
 
   return (
     <View style={styles.container}>
@@ -203,11 +221,11 @@ export const FriendSearchPanel: React.FC = () => {
           placeholder="IDを入力"
           placeholderTextColor="#999"
           value={searchId}
-          onChangeText={setSearchId}
+          onChangeText={handleSearchIdChange}
           onSubmitEditing={searchUser}
           autoCapitalize="none"
         />
-        <TouchableOpacity style={styles.searchButton} onPress={searchUser} disabled={isLoading}>
+        <TouchableOpacity style={styles.searchButton} onPress={searchUser} disabled={isLoading || !searchId.trim()}>
           <Ionicons name="search" size={20} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -218,22 +236,22 @@ export const FriendSearchPanel: React.FC = () => {
           <Text style={styles.emptyText}>検索中...</Text>
         </View>
       ) : null}
-      {searchResult ? (
-        <View style={styles.searchResultItem}>
-          <ProfileAvatar profileImage={searchResult.profile.profileImage} name={searchResult.profile.name} size={40} />
+      {searchResults.map((result) => (
+        <View key={result.profile.userId} style={styles.searchResultItem}>
+          <ProfileAvatar profileImage={result.profile.profileImage} name={result.profile.name} size={40} />
           <View style={styles.friendTextArea}>
-            <Text style={styles.searchResultName}>{searchResult.profile.name}</Text>
-            <Text style={styles.userId}>@{searchResult.profile.userId}</Text>
+            <Text style={styles.searchResultName}>{result.profile.name}</Text>
+            <Text style={styles.userId}>@{result.profile.userId}</Text>
           </View>
           <TouchableOpacity
-            style={[styles.requestButton, searchResult.relationship !== 'none' && styles.disabledButton]}
-            onPress={sendRequest}
-            disabled={searchResult.relationship !== 'none' || isLoading}
+            style={[styles.requestButton, result.relationship !== 'none' && styles.disabledButton]}
+            onPress={() => sendRequest(result)}
+            disabled={result.relationship !== 'none' || isLoading}
           >
-            <Text style={styles.requestButtonText}>{requestLabel}</Text>
+            <Text style={styles.requestButtonText}>{requestLabel(result.relationship)}</Text>
           </TouchableOpacity>
         </View>
-      ) : null}
+      ))}
       {message ? <Text style={styles.message}>{message}</Text> : null}
     </View>
   );

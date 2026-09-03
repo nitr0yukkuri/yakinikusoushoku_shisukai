@@ -41,6 +41,10 @@ type friendSearchResult struct {
 	Relationship string        `json:"relationship"`
 }
 
+type friendSearchResponse struct {
+	Results []friendSearchResult `json:"results"`
+}
+
 type friendRequestProfile struct {
 	ID        int64         `json:"id"`
 	User      friendProfile `json:"user"`
@@ -204,8 +208,7 @@ func handleFriendSearch(pool *pgxpool.Pool) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
-		var result friendSearchResult
-		err := pool.QueryRow(ctx, `
+		rows, err := pool.Query(ctx, `
 			SELECT `+friendProfileColumns(true)+`,
 				CASE
 					WHEN u.id = $2 THEN 'self'
@@ -227,23 +230,37 @@ func handleFriendSearch(pool *pgxpool.Pool) http.HandlerFunc {
 					ELSE 'none'
 				END
 			FROM auth_users u
-			WHERE u.user_id = $1
-		`, userID, userNo).Scan(
-			&result.Profile.UserID,
-			&result.Profile.Name,
-			&result.Profile.ProfileImage,
-			&result.Relationship,
-		)
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSONError(w, http.StatusNotFound, "user not found")
-			return
-		}
+			WHERE u.user_id ILIKE $1 || '%'
+			ORDER BY CASE WHEN LOWER(u.user_id) = LOWER($1) THEN 0 ELSE 1 END,
+				LOWER(u.user_id), u.id
+			LIMIT 20
+		`, userID, userNo)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "failed to search user")
 			return
 		}
+		defer rows.Close()
 
-		writeJSON(w, http.StatusOK, result)
+		results := make([]friendSearchResult, 0, 20)
+		for rows.Next() {
+			var result friendSearchResult
+			if err := rows.Scan(
+				&result.Profile.UserID,
+				&result.Profile.Name,
+				&result.Profile.ProfileImage,
+				&result.Relationship,
+			); err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "failed to search user")
+				return
+			}
+			results = append(results, result)
+		}
+		if err := rows.Err(); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to search user")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, friendSearchResponse{Results: results})
 	}
 }
 
