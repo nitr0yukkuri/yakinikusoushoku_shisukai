@@ -8,9 +8,10 @@ type ProfileAvatarProps = {
   profileImage?: string | null;
   size: number;
   style?: StyleProp<ImageStyle>;
+  resizeMode?: 'cover' | 'contain';
 };
 
-export function ProfileAvatar({ name, profileImage, size, style }: ProfileAvatarProps) {
+export function ProfileAvatar({ name, profileImage, size, style, resizeMode = 'cover' }: ProfileAvatarProps) {
   const [failedSource, setFailedSource] = useState<string | null>(null);
 
   if (profileImage && failedSource === profileImage) {
@@ -34,7 +35,7 @@ export function ProfileAvatar({ name, profileImage, size, style }: ProfileAvatar
       <Image
         source={{ uri: profileImage }}
         style={[{ width: size, height: size, borderRadius: size / 2 }, style]}
-        resizeMode="cover"
+        resizeMode={resizeMode}
         onError={() => setFailedSource(profileImage)}
       />
     );

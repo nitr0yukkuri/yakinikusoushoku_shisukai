@@ -149,7 +149,7 @@ const circularMarkerUrl = (name: string, profileImage?: string, size = 48, ringC
         context.arc(size / 2, size / 2, diameter / 2, 0, Math.PI * 2);
         context.clip();
 
-        const scale = Math.max(diameter / image.width, diameter / image.height);
+        const scale = Math.min(diameter / image.width, diameter / image.height);
         const width = image.width * scale;
         const height = image.height * scale;
         const x = inset + (diameter - width) / 2;
@@ -215,7 +215,7 @@ const loadGoogleMapsScript = () => {
 
     const script = document.createElement('script');
     script.id = GOOGLE_MAPS_SCRIPT_ID;
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&language=ja&region=JP`;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();

@@ -54,7 +54,10 @@ type profileRequest struct {
 	Bio          string `json:"bio"`
 }
 
-const maxProfileImageDataURLLength = 6990571
+const (
+	maxProfileImageDataURLLength = (5*1024*1024*4)/3 + 1024
+	maxArrivalDistanceMeters     = 100
+)
 
 type publicProfile struct {
 	UserID       string `json:"userId"`
@@ -75,10 +78,15 @@ type appTokenClaims struct {
 type wsClient struct {
 	hub      *wsHub
 	conn     *websocket.Conn
+	pool     *pgxpool.Pool
+	userNo   int64
+	meetupID int64
 	room     string
 	userID   string
 	userName string
 	send     chan []byte
+	done     chan struct{}
+	doneOnce sync.Once
 }
 
 type wsHub struct {
@@ -158,6 +166,22 @@ func (h *wsHub) run() {
 			if roomClients, ok := h.rooms[client.room]; ok {
 				if _, ok := roomClients[client]; ok {
 					delete(roomClients, client)
+					stillConnected := false
+					for other := range roomClients {
+						if other.userID == client.userID {
+							stillConnected = true
+							break
+						}
+					}
+					if !stillConnected {
+						delete(h.locations[client.room], client.userID)
+						if arrivals := h.arrivals[client.room]; arrivals != nil {
+							delete(arrivals, client.userID)
+							if len(arrivals) == 0 {
+								delete(h.arrivals, client.room)
+							}
+						}
+					}
 					close(client.send)
 					if len(roomClients) == 0 {
 						delete(h.rooms, client.room)
@@ -267,12 +291,23 @@ func (h *wsHub) clearArrival(room string, message arrivalTimeMessage) {
 }
 
 func nextArrivalTime(message arrivalTimeMessage, now time.Time) (time.Time, bool) {
+	const maxArrivalDuration = 24 * time.Hour
 	switch {
 	case message.ArrivalAt > 0:
-		return time.UnixMilli(message.ArrivalAt), true
+		arrivalAt := time.UnixMilli(message.ArrivalAt)
+		if !arrivalAt.After(now) || arrivalAt.After(now.Add(maxArrivalDuration)) {
+			return time.Time{}, false
+		}
+		return arrivalAt, true
 	case message.RemainingSeconds > 0:
+		if message.RemainingSeconds > int64(maxArrivalDuration/time.Second) {
+			return time.Time{}, false
+		}
 		return now.Add(time.Duration(message.RemainingSeconds) * time.Second), true
 	case message.Minutes > 0:
+		if message.Minutes > int64(maxArrivalDuration/time.Minute) {
+			return time.Time{}, false
+		}
 		return now.Add(time.Duration(message.Minutes) * time.Minute), true
 	default:
 		return time.Time{}, false
@@ -300,6 +335,7 @@ func buildArrivalUpdate(userID string, arrivalAt time.Time, now time.Time) []byt
 
 func (c *wsClient) readPump() {
 	defer func() {
+		c.stop()
 		c.hub.unregister <- c
 		c.conn.Close()
 	}()
@@ -312,6 +348,9 @@ func (c *wsClient) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			break
+		}
+		if !apiRateLimiter.allow(userRateLimitKey(c.userNo, "ws-message"), 120, time.Minute) {
+			continue
 		}
 
 		var envelope struct {
@@ -350,8 +389,34 @@ func (c *wsClient) readPump() {
 	}
 }
 
+func (c *wsClient) monitorAccess() {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := requireLiveMeetupMember(ctx, c.pool, c.userNo, c.meetupID)
+			cancel()
+			if err != nil {
+				_ = c.conn.Close()
+				return
+			}
+		case <-c.done:
+			return
+		}
+	}
+}
+
+func (c *wsClient) stop() {
+	c.doneOnce.Do(func() { close(c.done) })
+}
+
 func (c *wsClient) writePump() {
-	defer c.conn.Close()
+	defer func() {
+		c.stop()
+		c.conn.Close()
+	}()
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -380,7 +445,7 @@ func main() {
 	_ = godotenv.Load("../.env")
 
 	ctx := context.Background()
-	dburl := os.Getenv("DATABASE_URL")
+	dburl := normalizeDatabaseURL(os.Getenv("DATABASE_URL"))
 	if dburl == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
@@ -431,20 +496,20 @@ func main() {
 	http.HandleFunc("/auth/google/exchange", withCORS(handleGoogleOAuthExchange(pool)))
 	http.HandleFunc("/auth/profile", withCORS(handleAuthProfile(pool)))
 	http.HandleFunc("/profiles", withCORS(handlePublicProfile(pool)))
-	http.HandleFunc("/friends", withCORS(handleFriends(pool)))
-	http.HandleFunc("/friends/search", withCORS(handleFriendSearch(pool)))
-	http.HandleFunc("/friends/requests", withCORS(handleFriendRequests(pool)))
-	http.HandleFunc("/friends/qr", withCORS(handleFriendQR(pool)))
-	http.HandleFunc("/notifications", withCORS(handleNotifications(pool)))
-	http.HandleFunc("/meetups", withCORS(handleMeetups(pool)))
-	http.HandleFunc("/meetups/", withCORS(handleMeetupResource(pool)))
-	http.HandleFunc("/spots/", withCORS(handleSpots(pool)))
-	http.HandleFunc("/ws/tickets", withCORS(handleWSTickets(pool, wsTickets)))
+	http.HandleFunc("/friends", withCORS(withProfileSetupRequired(pool, handleFriends(pool))))
+	http.HandleFunc("/friends/search", withCORS(withProfileSetupRequired(pool, handleFriendSearch(pool))))
+	http.HandleFunc("/friends/requests", withCORS(withProfileSetupRequired(pool, handleFriendRequests(pool))))
+	http.HandleFunc("/friends/qr", withCORS(withProfileSetupRequired(pool, handleFriendQR(pool))))
+	http.HandleFunc("/notifications", withCORS(withProfileSetupRequired(pool, handleNotifications(pool))))
+	http.HandleFunc("/meetups", withCORS(withProfileSetupRequired(pool, handleMeetups(pool))))
+	http.HandleFunc("/meetups/", withCORS(withProfileSetupRequired(pool, handleMeetupResource(pool))))
+	http.HandleFunc("/spots/", withCORS(withProfileSetupRequired(pool, handleSpots(pool))))
+	http.HandleFunc("/ws/tickets", withCORS(withProfileSetupRequired(pool, handleWSTickets(pool, wsTickets))))
 
 	// ★追加：到着記録用エンドポイント
-	http.HandleFunc("/meetups/arrive", withCORS(handleMeetupArrive(pool)))
+	http.HandleFunc("/meetups/arrive", withCORS(withProfileSetupRequired(pool, handleMeetupArrive(pool))))
 	// ★追加：到着状況取得用エンドポイント
-	http.HandleFunc("/meetups/arrive_status", withCORS(handleMeetupArriveStatus(pool)))
+	http.HandleFunc("/meetups/arrive_status", withCORS(withProfileSetupRequired(pool, handleMeetupArriveStatus(pool))))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ticket, ok := wsTickets.consume(strings.TrimSpace(r.URL.Query().Get("ticket")))
@@ -454,7 +519,7 @@ func main() {
 		}
 		ctxAccess, cancelAccess := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancelAccess()
-		if err := requireAcceptedMeetupMember(ctxAccess, pool, ticket.UserNo, ticket.MeetupID); err != nil {
+		if err := requireLiveMeetupMember(ctxAccess, pool, ticket.UserNo, ticket.MeetupID); err != nil {
 			writeJSONError(w, http.StatusForbidden, "meetup access denied")
 			return
 		}
@@ -468,13 +533,16 @@ func main() {
 
 		client := &wsClient{
 			hub: hub, conn: conn, room: room,
+			pool: pool, userNo: ticket.UserNo, meetupID: ticket.MeetupID,
 			userID: ticket.UserID, userName: ticket.UserName,
 			send: make(chan []byte, 256),
+			done: make(chan struct{}),
 		}
 		client.hub.register <- client
 
 		go client.writePump()
 		go client.readPump()
+		go client.monitorAccess()
 	})
 
 	port := os.Getenv("PORT")
@@ -483,11 +551,22 @@ func main() {
 	}
 	addr := fmt.Sprintf(":%s", port)
 	log.Printf("listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           nil,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      20 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	log.Fatal(server.ListenAndServe())
 }
 
 func withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if rejectRateLimited(w, clientRateLimitKey(r, "api"), 300, time.Minute) {
+			return
+		}
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
 		if !originAllowed(origin) {
 			writeJSONError(w, http.StatusForbidden, "origin is not allowed")
@@ -502,6 +581,9 @@ func withCORS(next http.HandlerFunc) http.HandlerFunc {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
+		}
+		if r.Body != nil && (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
 		}
 		next(w, r)
 	}
@@ -518,22 +600,41 @@ func handleMeetupArrive(pool *pgxpool.Pool) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		if rejectRateLimited(w, userRateLimitKey(userNo, "arrive"), 30, time.Minute) {
+			return
+		}
 		var req struct {
-			MeetupID int64 `json:"meetupId"`
+			MeetupID  int64   `json:"meetupId"`
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "bad request")
 			return
 		}
-		if req.MeetupID <= 0 {
-			writeJSONError(w, http.StatusBadRequest, "valid meetupId is required")
+		if req.MeetupID <= 0 || math.IsNaN(req.Latitude) || math.IsInf(req.Latitude, 0) ||
+			math.IsNaN(req.Longitude) || math.IsInf(req.Longitude, 0) ||
+			req.Latitude < -90 || req.Latitude > 90 || req.Longitude < -180 || req.Longitude > 180 {
+			writeJSONError(w, http.StatusBadRequest, "valid meetupId and coordinates are required")
 			return
 		}
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		if err := requireAcceptedMeetupMember(ctx, pool, userNo, req.MeetupID); err != nil {
+		if err := requireLiveMeetupMember(ctx, pool, userNo, req.MeetupID); err != nil {
 			writeJSONError(w, http.StatusForbidden, "meetup access denied")
+			return
+		}
+		var destinationLat, destinationLng float64
+		if err := pool.QueryRow(ctx, `
+			SELECT latitude, longitude FROM meetups
+			WHERE id = $1 AND status IN ('scheduled', 'active')
+		`, req.MeetupID).Scan(&destinationLat, &destinationLng); err != nil {
+			writeJSONError(w, http.StatusNotFound, "meetup not found")
+			return
+		}
+		if haversineDistanceMeters(req.Latitude, req.Longitude, destinationLat, destinationLng) > maxArrivalDistanceMeters {
+			writeJSONError(w, http.StatusForbidden, "you are too far from the meetup place")
 			return
 		}
 
@@ -612,6 +713,9 @@ func handleGoogleAuth(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if rejectRateLimited(w, clientRateLimitKey(r, "google-auth"), 20, time.Minute) {
 			return
 		}
 
@@ -803,6 +907,10 @@ func handleAuthProfile(pool *pgxpool.Pool) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "userId must be alphanumeric")
 			return
 		}
+		if len([]rune(req.UserName)) > 20 || len([]rune(req.Bio)) > maxProfileBioSize {
+			writeJSONError(w, http.StatusBadRequest, "profile text is too long")
+			return
+		}
 		if len(req.ProfileImage) > maxProfileImageDataURLLength {
 			writeJSONError(w, http.StatusRequestEntityTooLarge, "profile image is too large")
 			return
@@ -975,6 +1083,9 @@ func validateAppToken(token string, secret string) (appTokenClaims, error) {
 }
 
 func isUserID(value string) bool {
+	if len(value) == 0 || len(value) > 20 {
+		return false
+	}
 	for _, r := range value {
 		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
 			return false

@@ -40,6 +40,11 @@ type meetupMember struct {
 	Status       string `json:"status"`
 }
 
+type meetupMemberStatus struct {
+	UserID string `json:"userId"`
+	Status string `json:"status"`
+}
+
 type createMeetupRequest struct {
 	ScheduledAt   string   `json:"scheduledAt"`
 	PlaceName     string   `json:"placeName"`
@@ -185,11 +190,14 @@ func handleMeetupResource(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 		if len(parts) == 2 && parts[1] == "members" {
-			if r.Method != http.MethodPut {
+			switch r.Method {
+			case http.MethodGet:
+				listMeetupMemberStatuses(w, r, pool, userNo, meetupID)
+			case http.MethodPut:
+				updateMeetupMember(w, r, pool, userNo, meetupID)
+			default:
 				writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-				return
 			}
-			updateMeetupMember(w, r, pool, userNo, meetupID)
 			return
 		}
 		if len(parts) == 2 && parts[1] == "eta" {
@@ -242,9 +250,16 @@ func listMeetups(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, use
 }
 
 func createMeetup(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {
+	if rejectRateLimited(w, userRateLimitKey(userNo, "create-meetup"), 20, time.Minute) {
+		return
+	}
 	var req createMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if len(req.FriendUserIDs) > maxMeetupInvitees {
+		writeJSONError(w, http.StatusBadRequest, "too many friends were invited")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
@@ -393,6 +408,43 @@ func selectMeetup(parent context.Context, pool *pgxpool.Pool, userNo, meetupID i
 	return item, rows.Err()
 }
 
+func listMeetupMemberStatuses(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo, meetupID int64) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := requireAcceptedMeetupMember(ctx, pool, userNo, meetupID); err != nil {
+		writeJSONError(w, http.StatusForbidden, "meetup access denied")
+		return
+	}
+
+	rows, err := pool.Query(ctx, `
+		SELECT u.user_id, mm.status
+		FROM meetup_members mm
+		JOIN auth_users u ON u.id = mm.user_id
+		WHERE mm.meetup_id = $1
+		ORDER BY CASE WHEN mm.role = 'owner' THEN 0 ELSE 1 END, LOWER(u.name)
+	`, meetupID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to read meetup members")
+		return
+	}
+	defer rows.Close()
+
+	members := make([]meetupMemberStatus, 0)
+	for rows.Next() {
+		var member meetupMemberStatus
+		if err := rows.Scan(&member.UserID, &member.Status); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "failed to read meetup members")
+			return
+		}
+		members = append(members, member)
+	}
+	if err := rows.Err(); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "failed to read meetup members")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"members": members})
+}
+
 func updateMeetup(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo, meetupID int64) {
 	var req updateMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -477,6 +529,9 @@ func cancelMeetup(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, us
 }
 
 func joinMeetup(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo int64) {
+	if rejectRateLimited(w, userRateLimitKey(userNo, "join-meetup"), 30, time.Minute) {
+		return
+	}
 	var req joinMeetupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid json body")
@@ -516,6 +571,9 @@ func joinMeetup(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, user
 }
 
 func updateMeetupMember(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo, meetupID int64) {
+	if rejectRateLimited(w, userRateLimitKey(userNo, "meetup-member"), 60, time.Minute) {
+		return
+	}
 	var req updateMeetupMemberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid json body")
@@ -581,6 +639,27 @@ func requireAcceptedMeetupMember(ctx context.Context, pool *pgxpool.Pool, userNo
 	return nil
 }
 
+func requireLiveMeetupMember(ctx context.Context, pool *pgxpool.Pool, userNo, meetupID int64) error {
+	var allowed bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM meetup_members mm
+			JOIN meetups m ON m.id = mm.meetup_id
+			WHERE mm.meetup_id = $1 AND mm.user_id = $2 AND mm.status = 'accepted'
+				AND m.status IN ('scheduled', 'active')
+				AND m.scheduled_at >= now() - interval '2 hours'
+				AND m.scheduled_at <= now() + interval '30 minutes'
+		)
+	`, meetupID, userNo).Scan(&allowed)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return fmt.Errorf("live meetup access denied")
+	}
+	return nil
+}
+
 func validateMeetupInput(scheduledAtText, placeName string, latitude, longitude float64) (time.Time, error) {
 	scheduledAt, err := time.Parse(time.RFC3339, strings.TrimSpace(scheduledAtText))
 	if err != nil {
@@ -588,6 +667,9 @@ func validateMeetupInput(scheduledAtText, placeName string, latitude, longitude 
 	}
 	if strings.TrimSpace(placeName) == "" {
 		return time.Time{}, fmt.Errorf("placeName is required")
+	}
+	if len([]rune(strings.TrimSpace(placeName))) > maxMeetupPlaceNameSize {
+		return time.Time{}, fmt.Errorf("placeName is too long")
 	}
 	if math.IsNaN(latitude) || math.IsInf(latitude, 0) || latitude < -90 || latitude > 90 {
 		return time.Time{}, fmt.Errorf("valid latitude is required")

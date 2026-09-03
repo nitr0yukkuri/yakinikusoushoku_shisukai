@@ -86,6 +86,9 @@ type routesAPIResponse struct {
 }
 
 func calculateMeetupETA(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, userNo, meetupID int64) {
+	if rejectRateLimited(w, userRateLimitKey(userNo, "eta"), 60, time.Minute) {
+		return
+	}
 	var req calculateETARequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid json body")
@@ -174,8 +177,7 @@ func listMeetupETAs(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, 
 	rows, err := pool.Query(ctx, `
 		SELECT e.meetup_id, e.travel_mode, e.duration_seconds, e.distance_meters,
 			e.buffer_minutes, COALESCE(e.route_polyline, ''), e.arrival_at, e.updated_at,
-			u.user_id, COALESCE(u.name, ''),
-			COALESCE(NULLIF(u.profile_image, ''), NULLIF(u.picture_url, ''), '')
+			u.user_id, COALESCE(u.name, '')
 		FROM meetup_arrival_estimates e
 		JOIN auth_users u ON u.id = e.user_id
 		JOIN meetup_members mm ON mm.meetup_id = e.meetup_id
@@ -194,7 +196,7 @@ func listMeetupETAs(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, 
 		if err := rows.Scan(
 			&item.MeetupID, &item.TravelMode, &item.DurationSeconds, &item.DistanceMeters,
 			&item.BufferMinutes, &item.RoutePolyline, &item.ArrivalAt, &item.UpdatedAt,
-			&item.User.UserID, &item.User.Name, &item.User.ProfileImage,
+			&item.User.UserID, &item.User.Name,
 		); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "failed to read ETAs")
 			return

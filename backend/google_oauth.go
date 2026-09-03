@@ -52,6 +52,9 @@ func handleGoogleOAuthStart() http.HandlerFunc {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+		if rejectRateLimited(w, clientRateLimitKey(r, "oauth-start"), 20, time.Minute) {
+			return
+		}
 
 		clientID := googleWebClientID()
 		if clientID == "" {
@@ -170,6 +173,9 @@ func handleGoogleOAuthCallback(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if rejectRateLimited(w, clientRateLimitKey(r, "oauth-callback"), 30, time.Minute) {
 			return
 		}
 
@@ -315,6 +321,9 @@ func handleGoogleOAuthExchange(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		if rejectRateLimited(w, clientRateLimitKey(r, "oauth-exchange"), 30, time.Minute) {
 			return
 		}
 

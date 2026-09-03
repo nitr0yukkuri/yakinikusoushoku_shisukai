@@ -9,7 +9,8 @@
       "environment": "preview",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://matsunya-backend.onrender.com",
-        "EXPO_PUBLIC_WS_URL": "wss://matsunya-backend.onrender.com/ws"
+        "EXPO_PUBLIC_WS_URL": "wss://matsunya-backend.onrender.com/ws",
+        "EXPO_PUBLIC_DEMO_MODE": "false"
       },
       "android": {
         "buildType": "apk"

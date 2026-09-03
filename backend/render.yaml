@@ -8,6 +8,8 @@ services:
     dockerfilePath: Dockerfile
     healthCheckPath: /health
     envVars:
+      - key: PORT
+        value: "8080"
       - key: DATABASE_URL
         sync: false
       - key: GOOGLE_MAPS_API_KEY
