@@ -496,20 +496,20 @@ func main() {
 	http.HandleFunc("/auth/google/exchange", withCORS(handleGoogleOAuthExchange(pool)))
 	http.HandleFunc("/auth/profile", withCORS(handleAuthProfile(pool)))
 	http.HandleFunc("/profiles", withCORS(handlePublicProfile(pool)))
-	http.HandleFunc("/friends", withCORS(handleFriends(pool)))
-	http.HandleFunc("/friends/search", withCORS(handleFriendSearch(pool)))
-	http.HandleFunc("/friends/requests", withCORS(handleFriendRequests(pool)))
-	http.HandleFunc("/friends/qr", withCORS(handleFriendQR(pool)))
-	http.HandleFunc("/notifications", withCORS(handleNotifications(pool)))
-	http.HandleFunc("/meetups", withCORS(handleMeetups(pool)))
-	http.HandleFunc("/meetups/", withCORS(handleMeetupResource(pool)))
-	http.HandleFunc("/spots/", withCORS(handleSpots(pool)))
-	http.HandleFunc("/ws/tickets", withCORS(handleWSTickets(pool, wsTickets)))
+	http.HandleFunc("/friends", withCORS(withProfileSetupRequired(pool, handleFriends(pool))))
+	http.HandleFunc("/friends/search", withCORS(withProfileSetupRequired(pool, handleFriendSearch(pool))))
+	http.HandleFunc("/friends/requests", withCORS(withProfileSetupRequired(pool, handleFriendRequests(pool))))
+	http.HandleFunc("/friends/qr", withCORS(withProfileSetupRequired(pool, handleFriendQR(pool))))
+	http.HandleFunc("/notifications", withCORS(withProfileSetupRequired(pool, handleNotifications(pool))))
+	http.HandleFunc("/meetups", withCORS(withProfileSetupRequired(pool, handleMeetups(pool))))
+	http.HandleFunc("/meetups/", withCORS(withProfileSetupRequired(pool, handleMeetupResource(pool))))
+	http.HandleFunc("/spots/", withCORS(withProfileSetupRequired(pool, handleSpots(pool))))
+	http.HandleFunc("/ws/tickets", withCORS(withProfileSetupRequired(pool, handleWSTickets(pool, wsTickets))))
 
 	// ★追加：到着記録用エンドポイント
-	http.HandleFunc("/meetups/arrive", withCORS(handleMeetupArrive(pool)))
+	http.HandleFunc("/meetups/arrive", withCORS(withProfileSetupRequired(pool, handleMeetupArrive(pool))))
 	// ★追加：到着状況取得用エンドポイント
-	http.HandleFunc("/meetups/arrive_status", withCORS(handleMeetupArriveStatus(pool)))
+	http.HandleFunc("/meetups/arrive_status", withCORS(withProfileSetupRequired(pool, handleMeetupArriveStatus(pool))))
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ticket, ok := wsTickets.consume(strings.TrimSpace(r.URL.Query().Get("ticket")))
