@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { StyleProp, StyleSheet, ViewStyle, ActivityIndicator, View, Alert } from 'react-native';
 import MapView, { PROVIDER_GOOGLE, Region, Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -8,6 +8,7 @@ import { getApiUrl, getWebSocketUrl } from '../utils/api-url';
 
 const WS_URL = getWebSocketUrl();
 const API_URL = getApiUrl();
+const demoLocationEditingEnabled = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
 
 const INITIAL_REGION: Region = {
   latitude: 35.681236,
@@ -106,10 +107,12 @@ export const AppMap = ({
 
   const [locations, setLocations] = useState<Record<string, UserLocation>>({});
   const [myLocation, setMyLocation] = useState<Location.LocationObject | null>(null);
+  const [isManualLocationMode, setIsManualLocationMode] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const mapRef = useRef<MapView | null>(null);
   const currentPositionRef = useRef<{ lat: number; lng: number } | null>(null);
+  const manualLocationModeRef = useRef(false);
   const markerProfileVersionsRef = useRef<Record<string, string>>({});
   const hasCenteredOnCurrentLocationRef = useRef(false);
   const onCurrentLocationChangeRef = useRef(onCurrentLocationChange);
@@ -118,6 +121,36 @@ export const AppMap = ({
     () => (routePolyline ? decodePolyline(routePolyline) : []),
     [routePolyline],
   );
+
+  const publishManualPosition = useCallback((coordinate: { latitude: number; longitude: number }) => {
+    const timestamp = Date.now();
+    currentPositionRef.current = {
+      lat: coordinate.latitude,
+      lng: coordinate.longitude,
+    };
+    setMyLocation((current) => current ? {
+      ...current,
+      coords: {
+        ...current.coords,
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+      },
+      timestamp,
+    } : current);
+    onCurrentLocationChangeRef.current?.(coordinate, { forceETARefresh: true });
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'LOCATION_UPDATE',
+        userId,
+        userName: profileRef.current.userName,
+        profileVersion: `${profileRef.current.userName}:${profileRef.current.profileImage?.length || 0}:${profileRef.current.profileImage?.slice(-16) || ''}`,
+        lat: coordinate.latitude,
+        lng: coordinate.longitude,
+        timestamp,
+      }));
+    }
+  }, [userId]);
 
   useEffect(() => {
     onCurrentLocationChangeRef.current = onCurrentLocationChange;
@@ -286,6 +319,7 @@ export const AppMap = ({
             timeInterval: 5000,
           },
           (location) => {
+            if (demoLocationEditingEnabled && manualLocationModeRef.current) return;
             setMyLocation(location);
             currentPositionRef.current = {
               lat: location.coords.latitude,
@@ -418,6 +452,30 @@ export const AppMap = ({
             longitude: myLocation.coords.longitude,
           }}
           title={userName}
+          draggable={demoLocationEditingEnabled && isManualLocationMode}
+          onPress={() => {
+            if (!demoLocationEditingEnabled) return;
+            manualLocationModeRef.current = true;
+            setIsManualLocationMode(true);
+          }}
+          onDragStart={() => {
+            if (!demoLocationEditingEnabled) return;
+            manualLocationModeRef.current = true;
+            setIsManualLocationMode(true);
+          }}
+          onDrag={(event) => {
+            if (!demoLocationEditingEnabled) return;
+            const { latitude, longitude } = event.nativeEvent.coordinate;
+            currentPositionRef.current = { lat: latitude, lng: longitude };
+            mapRef.current?.animateCamera({
+              center: { latitude, longitude },
+            }, { duration: 0 });
+          }}
+          onDragEnd={(event) => {
+            if (!demoLocationEditingEnabled) return;
+            const { latitude, longitude } = event.nativeEvent.coordinate;
+            publishManualPosition({ latitude, longitude });
+          }}
           tracksViewChanges={Boolean(profileImage)}
         >
           <View style={[styles.markerBorder, styles.currentMarkerBorder]}>
