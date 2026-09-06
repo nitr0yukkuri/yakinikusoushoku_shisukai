@@ -621,7 +621,7 @@ func handleMeetupArrive(pool *pgxpool.Pool) http.HandlerFunc {
 
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		if err := requireLiveMeetupMember(ctx, pool, userNo, req.MeetupID); err != nil {
+		if err := requireArrivalMeetupMember(ctx, pool, userNo, req.MeetupID); err != nil {
 			writeJSONError(w, http.StatusForbidden, "meetup access denied")
 			return
 		}
