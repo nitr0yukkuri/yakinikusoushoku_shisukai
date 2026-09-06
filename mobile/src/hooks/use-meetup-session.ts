@@ -72,6 +72,7 @@ export function useMeetupSession(token: string | null, userId?: string) {
   const currentCoordinateRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const initialETAReportedMeetupIdRef = useRef<number | null>(null);
   const etaAccessDeniedMeetupIdsRef = useRef<Set<number>>(new Set());
+  const etaRefreshRequestVersionRef = useRef(0);
   const lastRouteTravelModeRef = useRef<string | null>(null);
   const wsTicketRequestVersionRef = useRef(0);
 
@@ -189,11 +190,13 @@ export function useMeetupSession(token: string | null, userId?: string) {
     if (etaAccessDeniedMeetupIdsRef.current.has(activeMeetup.id)) return;
     const meetupId = activeMeetup.id;
     const generation = etaGenerationRef.current;
+    const requestVersion = ++etaRefreshRequestVersionRef.current;
     const response = await fetch(`${apiUrl}/meetups/${meetupId}/eta`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const body = await response.json();
-    if (generation !== etaGenerationRef.current) return;
+    if (generation !== etaGenerationRef.current
+      || requestVersion !== etaRefreshRequestVersionRef.current) return;
     if (response.status === 403) {
       etaAccessDeniedMeetupIdsRef.current.add(meetupId);
       setEtaAccessDeniedMeetupIds((current) => new Set(current).add(meetupId));
@@ -244,6 +247,11 @@ export function useMeetupSession(token: string | null, userId?: string) {
     });
     const body = await response.json();
     if (response.status === 403) {
+      console.warn('WebSocket ticket is unavailable outside the live meetup window:', {
+        meetupId,
+        status: response.status,
+        error: body.error,
+      });
       setIssuedWSTicket(undefined);
       return;
     }

@@ -640,17 +640,35 @@ func requireAcceptedMeetupMember(ctx context.Context, pool *pgxpool.Pool, userNo
 }
 
 func requireLiveMeetupMember(ctx context.Context, pool *pgxpool.Pool, userNo, meetupID int64) error {
+	// Location sharing must be available during the same two-hour demo window
+	// as the arrival action. The membership/status checks still protect access.
+	return requireMeetupMemberWithinWindow(ctx, pool, userNo, meetupID, 2*time.Hour, 2*time.Hour)
+}
+
+func requireArrivalMeetupMember(ctx context.Context, pool *pgxpool.Pool, userNo, meetupID int64) error {
+	return requireMeetupMemberWithinWindow(ctx, pool, userNo, meetupID, 2*time.Hour, 2*time.Hour)
+}
+
+func requireMeetupMemberWithinWindow(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	userNo int64,
+	meetupID int64,
+	pastWindow time.Duration,
+	futureWindow time.Duration,
+) error {
 	var allowed bool
+	now := time.Now()
 	err := pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1 FROM meetup_members mm
 			JOIN meetups m ON m.id = mm.meetup_id
 			WHERE mm.meetup_id = $1 AND mm.user_id = $2 AND mm.status = 'accepted'
 				AND m.status IN ('scheduled', 'active')
-				AND m.scheduled_at >= now() - interval '2 hours'
-				AND m.scheduled_at <= now() + interval '30 minutes'
+				AND m.scheduled_at >= $3
+				AND m.scheduled_at <= $4
 		)
-	`, meetupID, userNo).Scan(&allowed)
+	`, meetupID, userNo, now.Add(-pastWindow), now.Add(futureWindow)).Scan(&allowed)
 	if err != nil {
 		return err
 	}
