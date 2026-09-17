@@ -106,6 +106,7 @@ export const AppMap = ({
   const profileRef = useRef({ userName, profileImage });
 
   const [locations, setLocations] = useState<Record<string, UserLocation>>({});
+  const [loadedMarkerImages, setLoadedMarkerImages] = useState<Record<string, string>>({});
   const [myLocation, setMyLocation] = useState<Location.LocationObject | null>(null);
   const [isManualLocationMode, setIsManualLocationMode] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -121,6 +122,12 @@ export const AppMap = ({
     () => (routePolyline ? decodePolyline(routePolyline) : []),
     [routePolyline],
   );
+  const markMarkerImageLoaded = useCallback((markerId: string, imageKey: string) => {
+    setLoadedMarkerImages((prev) => {
+      if (prev[markerId] === imageKey) return prev;
+      return { ...prev, [markerId]: imageKey };
+    });
+  }, []);
 
   const publishManualPosition = useCallback((coordinate: { latitude: number; longitude: number }) => {
     const timestamp = Date.now();
@@ -272,6 +279,7 @@ export const AppMap = ({
       if (reconnectTimer) clearInterval(reconnectTimer);
       ws.close();
       setLocations({});
+      setLoadedMarkerImages({});
       markerProfileVersionsRef.current = {};
     };
   }, [hideSharedLocations, roomId, userId, wsTicket]);
@@ -485,18 +493,34 @@ export const AppMap = ({
             latitude: myLocation.coords.latitude,
             longitude: myLocation.coords.longitude,
           }}
+          anchor={{ x: 0.5, y: 0.5 }}
           title={userName}
+          zIndex={2}
           draggable={demoLocationEditingEnabled && isManualLocationMode}
           onPress={() => {
             if (!demoLocationEditingEnabled) return;
             manualLocationModeRef.current = true;
             setIsManualLocationMode(true);
           }}
+          onDragStart={() => {
+            if (!demoLocationEditingEnabled) return;
+            manualLocationModeRef.current = true;
+            setIsManualLocationMode(true);
+          }}
+          onDrag={(event) => {
+            if (!demoLocationEditingEnabled) return;
+            const { latitude, longitude } = event.nativeEvent.coordinate;
+            currentPositionRef.current = { lat: latitude, lng: longitude };
+            mapRef.current?.animateCamera({
+              center: { latitude, longitude },
+            }, { duration: 0 });
+          }}
           onDragEnd={(event) => {
+            if (!demoLocationEditingEnabled) return;
             const { latitude, longitude } = event.nativeEvent.coordinate;
             publishManualPosition({ latitude, longitude });
           }}
-          tracksViewChanges={Boolean(profileImage)}
+          tracksViewChanges={Boolean(profileImage) && loadedMarkerImages[selfMarkerId] !== selfMarkerImageKey}
         >
           <View style={styles.markerBorder}>
             <ProfileAvatar
@@ -506,6 +530,7 @@ export const AppMap = ({
               size={34}
               style={styles.avatar}
               resizeMode="contain"
+              onLoadEnd={() => markMarkerImageLoaded(selfMarkerId, selfMarkerImageKey)}
             />
           </View>
         </Marker>
@@ -519,8 +544,9 @@ export const AppMap = ({
             key={markerId}
             identifier={markerId}
             coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
+            anchor={{ x: 0.5, y: 0.5 }}
             title={loc.userName}
-            tracksViewChanges={Boolean(loc.profileImage)}
+          tracksViewChanges={Boolean(loc.profileImage) && loadedMarkerImages[markerId] !== markerImageKey}
           >
             <View style={styles.markerBorder}>
               <ProfileAvatar
@@ -530,6 +556,7 @@ export const AppMap = ({
                 size={34}
                 style={styles.avatar}
                 resizeMode="contain"
+                onLoadEnd={() => markMarkerImageLoaded(markerId, markerImageKey)}
               />
             </View>
           </Marker>
@@ -552,6 +579,7 @@ export const AppMap = ({
       {selectedLocation && (
         <Marker
           coordinate={selectedLocation}
+          zIndex={1}
           pinColor="#ff4500"
           title="待ち合わせ場所"
         />

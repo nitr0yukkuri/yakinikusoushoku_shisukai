@@ -36,6 +36,9 @@ import { useNotifications } from '../hooks/use-notifications';
 import { getProfileImageSignature } from '../utils/profile-image';
 
 const arriveButtonDistanceMeters = 100;
+const demoArrivalWindowMs = 2 * 60 * 60 * 1000;
+const normalArrivalWindowMs = 30 * 60 * 1000;
+const isDemoMode = process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
 
 type MapCoordinate = {
   latitude: number;
@@ -151,9 +154,10 @@ export default function HomeScreen() {
     }
     const scheduledAt = new Date(activeMeetup.scheduledAt).getTime();
     const now = currentTime;
+    const arrivalWindowMs = isDemoMode ? demoArrivalWindowMs : normalArrivalWindowMs;
     if (!Number.isFinite(scheduledAt)
-      || now < scheduledAt - 30 * 60 * 1000
-      || now > scheduledAt + 30 * 60 * 1000) {
+      || now < scheduledAt - arrivalWindowMs
+      || now > scheduledAt + arrivalWindowMs) {
       return false;
     }
     if (!activeMeetupLocation || !currentLocation) {
@@ -518,7 +522,7 @@ const styles = StyleSheet.create({
   },
   arrivalBadge: {
     position: 'absolute',
-    top: 85,
+    top: 125,
     alignSelf: 'center',
     zIndex: 1,
     elevation: 1,
