@@ -46,7 +46,7 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: TypeScript
-        run: npx tsc --noEmit
+        run: npx tsc --noEmit -p tsconfig.verify.json
       - name: Lint
         run: npm run lint
 
