@@ -1,4 +1,4 @@
-# Matsun-ya
+# Matsun-ya (待つん屋)
 
 [日本語](README.md) | [English](README.en.md)
 
