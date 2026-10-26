@@ -166,12 +166,13 @@ npx expo start
 ```
 
 ---
-### 5. なんかフロントエンドとかでバグったとき
+### 5. フロントエンドで問題が起きたとき
 
+Expoのキャッシュをクリアして起動し直します。
 
 ```bash
 cd mobile
- -c
+npx expo start --clear
 ```
 
 
