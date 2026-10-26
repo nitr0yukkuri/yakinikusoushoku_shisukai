@@ -175,11 +175,13 @@ npx expo start
 
 ---
 
-### 5. When the frontend or something else breaks
+### 5. When frontend issues occur
+
+Restart Expo and clear its bundler cache:
 
 ```bash
 cd mobile
- -c
+npx expo start --clear
 ```
 
 ## Environment variables
